@@ -1,0 +1,30 @@
+{
+  "name": "dg-game",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "A diffenderfer.games game (TypeScript + Vite + PixiJS).",
+  "author": "your name here",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "sync-hub": "node scripts/sync-hub.mjs"
+  },
+  "game": {
+    "type": "static",
+    "title": "My Game",
+    "description": "Describe your game here — shows on the catalog card.",
+    "build": "npm run build",
+    "serveDir": "dist",
+    "menuPosition": "top-right",
+    "image": "cover.png"
+  },
+  "dependencies": {
+    "pixi.js": "^8.6.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vite": "^6.0.0"
+  }
+}
