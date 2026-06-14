@@ -713,7 +713,7 @@ class NavState {
     this.list = this.resolve();
     const n = this.list[this.index]; if (!n) return;
     if (n.kind === 'text') {
-      if (overlay) overlay.openKeyboard(n.el as HTMLInputElement | null, () => { });
+      if (overlay) overlay.openKeyboard(n.el as HTMLInputElement | null);
     } else if (n.el && (n.el.tagName === 'A' || n.el.tagName === 'BUTTON' || (n.el as any).click)) {
       (n.el as HTMLElement).click();
     }
