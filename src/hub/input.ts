@@ -76,6 +76,9 @@ export interface VirtualDef {
   id: string;
   type: 'button' | 'joystick' | 'dpad' | 'tap';
   place: Anchor;
+  /** Explicit pixel position from the viewport edges — bypasses anchor auto-
+   *  layout for this control (e.g. pin a pause button just above a stick). */
+  pos?: { left?: number; right?: number; top?: number; bottom?: number };
   size?: number;              // px (joystick/button diameter; or width if w/h given)
   width?: number;             // px — overrides size for width (non-square controls)
   height?: number;            // px — overrides size for height
@@ -269,7 +272,19 @@ export class InputSystem {
   attachMenu(bridge: InputHost['menu']): void { this.host.menu = bridge; }
   setLegacyControls(controls: any): void { this.host.legacyControls = controls; }
 
-  enable(group: string): void { this.groupEnabled.set(group, true); this.syncVirtualVisibility(); this.refreshNav(group); }
+  enable(group: string): void {
+    this.groupEnabled.set(group, true);
+    // Seed held inputs so re-enabling doesn't fire a phantom isDown for a key/
+    // button that's still down (e.g. the pause key held as gameplay resumes —
+    // otherwise it would immediately re-trigger and re-pause). prev = raw = now.
+    for (const [name, gi] of this.inputGroup) {
+      if (gi !== group) continue;
+      const ri = this.inputs.get(name)!;
+      const v = clamp01(this.computeRaw(ri.def));
+      ri.raw = v; ri.prev = v;
+    }
+    this.syncVirtualVisibility(); this.refreshNav(group);
+  }
   disable(group: string): void {
     this.groupEnabled.set(group, false);
     // zero held inputs in this group
