@@ -3,3 +3,5 @@ dist/
 .diffenderfer-build-cache
 *.log
 .DS_Store
+# generated single-file build (shareable artifact; not source)
+reactor-coolant.html
