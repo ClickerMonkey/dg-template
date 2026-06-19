@@ -39,26 +39,27 @@ export function polarityColor(el: number): { hi: number; lo: number } {
  * Draw an element glyph into a Graphics, centred at (cx,cy) with radius r.
  * Each shape is deliberately not card-like.
  */
-export function drawGlyph(g: Graphics, el: number, cx: number, cy: number, r: number, color: number): void {
+export function drawGlyph(g: Graphics, el: number, cx: number, cy: number, r: number, color: number, alpha = 1): void {
   const lw = Math.max(1.5, r * 0.16);
+  const A = (a: number) => a * alpha;
   switch (el) {
     case 0: { // Pyron — plasma flame (teardrop)
       g.moveTo(cx, cy - r);
       g.bezierCurveTo(cx + r, cy - r * 0.2, cx + r * 0.7, cy + r, cx, cy + r);
       g.bezierCurveTo(cx - r * 0.7, cy + r, cx - r, cy - r * 0.2, cx, cy - r);
-      g.fill({ color, alpha: 0.95 });
-      g.circle(cx, cy + r * 0.25, r * 0.34).fill({ color: 0x000000, alpha: 0.25 });
+      g.fill({ color, alpha: A(0.95) });
+      g.circle(cx, cy + r * 0.25, r * 0.34).fill({ color: 0x000000, alpha: A(0.25) });
       break;
     }
     case 1: { // Solis — sun (disc + rays)
-      g.circle(cx, cy, r * 0.5).fill({ color, alpha: 0.95 });
+      g.circle(cx, cy, r * 0.5).fill({ color, alpha: A(0.95) });
       for (let i = 0; i < 8; i += 1) {
         const a = (i / 8) * Math.PI * 2;
         const x1 = cx + Math.cos(a) * r * 0.66, y1 = cy + Math.sin(a) * r * 0.66;
         const x2 = cx + Math.cos(a) * r, y2 = cy + Math.sin(a) * r;
         g.moveTo(x1, y1).lineTo(x2, y2);
       }
-      g.stroke({ width: lw, color, alpha: 0.95, cap: 'round' });
+      g.stroke({ width: lw, color, alpha: A(0.95), cap: 'round' });
       break;
     }
     case 2: { // Cryon — snowflake (6 spokes with barbs)
@@ -71,7 +72,7 @@ export function drawGlyph(g: Graphics, el: number, cx: number, cy: number, r: nu
         g.moveTo(bx, by).lineTo(bx + Math.cos(pa) * r * 0.28, by + Math.sin(pa) * r * 0.28);
         g.moveTo(bx, by).lineTo(bx + Math.cos(na) * r * 0.28, by + Math.sin(na) * r * 0.28);
       }
-      g.stroke({ width: lw, color, alpha: 0.95, cap: 'round' });
+      g.stroke({ width: lw, color, alpha: A(0.95), cap: 'round' });
       break;
     }
     default: { // Aether — four-point star (void rift)
@@ -84,7 +85,7 @@ export function drawGlyph(g: Graphics, el: number, cx: number, cy: number, r: nu
       g.lineTo(cx - r, cy);
       g.lineTo(cx - r * 0.22, cy - r * 0.22);
       g.closePath();
-      g.fill({ color, alpha: 0.95 });
+      g.fill({ color, alpha: A(0.95) });
       break;
     }
   }

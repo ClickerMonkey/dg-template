@@ -19,8 +19,9 @@ type SlotRef =
   | { kind: 'conduit'; i: number };
 
 interface Geom {
-  cardW: number; cardH: number; gap: number; left: number;
-  topY: number; conduitTop: number; fanUp: number; fanDown: number; radius: number;
+  cardW: number; cardH: number; gap: number;
+  conduitTop: number; fanUp: number; fanDown: number; radius: number;
+  hub: { cx: number; cy: number; r: number };
   slots: { stock: P; waste: P; cores: P[]; conduits: P[] };
 }
 interface P { x: number; y: number; }
@@ -68,17 +69,22 @@ class CardView extends Container {
     const deco = this.deco.clear();
 
     if (!card.up) {
-      // encrypted / uncharged cell
-      body.roundRect(0, 0, w, h, r).fill({ color: COLORS.cellBack }).stroke({ width: 2, color: COLORS.cellBackEdge });
-      const step = Math.max(8, w * 0.18);
+      // encrypted / uncharged cell — kept clearly visible so a fanned stack reads
+      body.roundRect(0, 0, w, h, r).fill({ color: 0x102236 }).stroke({ width: 2, color: 0x305f8f, alpha: 0.95 });
+      // header strip so each fanned card-top is distinct, with a "locked" gauge
+      body.roundRect(0, 0, w, h * 0.30, r).fill({ color: 0x16314e, alpha: 0.8 });
+      body.rect(0, h * 0.295, w, 1.5).fill({ color: 0x305f8f, alpha: 0.7 });
+      const lk = 13, lx0 = w * 0.08, lx1 = w * 0.92, lw = (lx1 - lx0) / lk;
+      for (let i = 0; i < lk; i += 1) deco.roundRect(lx0 + i * lw + lw * 0.12, h * 0.045, lw * 0.76, h * 0.04, 1).fill({ color: 0x274869, alpha: 0.8 });
       // diagonal scan lines
+      const step = Math.max(8, w * 0.18);
       for (let d = -h; d < w; d += step) {
-        const x1 = d, y1 = h - 6, x2 = d + h, y2 = 6;
-        deco.moveTo(clampN(x1, 6, w - 6), y1).lineTo(clampN(x2, 6, w - 6), y2);
+        deco.moveTo(clampN(d, 6, w - 6), h - 6).lineTo(clampN(d + h, 6, w - 6), 6);
       }
-      deco.stroke({ width: 1, color: COLORS.cellBackEdge, alpha: 0.5 });
-      deco.circle(w / 2, h / 2, Math.min(w, h) * 0.16).stroke({ width: 2, color: 0x2f5d8f, alpha: 0.8 });
-      deco.circle(w / 2, h / 2, Math.min(w, h) * 0.06).fill({ color: 0x2f5d8f, alpha: 0.8 });
+      deco.stroke({ width: 1, color: 0x3a6ea0, alpha: 0.4 });
+      // lock glyph
+      deco.circle(w / 2, h * 0.62, Math.min(w, h) * 0.15).stroke({ width: 2, color: 0x4aa0e0, alpha: 0.85 });
+      deco.circle(w / 2, h * 0.62, Math.min(w, h) * 0.055).fill({ color: 0x4aa0e0, alpha: 0.85 });
       this.num.visible = false;
       return;
     }
@@ -90,28 +96,33 @@ class CardView extends Container {
     body.roundRect(0, 0, w, h, r).fill({ color: COLORS.cellBack });
     body.roundRect(0, 0, w, h, r).fill({ color: pol.lo, alpha: 0.35 });
     body.roundRect(0, 0, w, h, r).stroke({ width: 2.5, color: pol.hi, alpha: 0.95 });
-    // polarity tab along the top
-    body.roundRect(w * 0.18, 3, w * 0.64, 4, 2).fill({ color: pol.hi, alpha: 0.9 });
 
-    // charge gauge down the left edge (rank/13 segments)
-    const segs = 13, pad = h * 0.10, gx = w * 0.12, gw = w * 0.10;
-    const gh = h - pad * 2, sh = gh / segs;
+    // Everything that identifies a cell lives in the TOP strip so it stays
+    // readable when cells overlap down a conduit.
+    // header bar tinted by polarity (reads hot/cold at a glance)
+    body.roundRect(0, 0, w, h * 0.30, r).fill({ color: pol.hi, alpha: 0.16 });
+    body.rect(0, h * 0.295, w, 1.5).fill({ color: pol.hi, alpha: 0.5 });
+
+    // horizontal charge gauge across the very top (rank / 13 segments)
+    const segs = 13, gx0 = w * 0.08, gx1 = w * 0.92, gy = h * 0.045, gh = h * 0.04;
+    const sw = (gx1 - gx0) / segs;
     for (let i = 0; i < segs; i += 1) {
       const filled = i < card.rank;
-      const y = h - pad - (i + 1) * sh + sh * 0.12;
-      deco.roundRect(gx, y, gw, sh * 0.76, 1.5)
+      deco.roundRect(gx0 + i * sw + sw * 0.12, gy, sw * 0.76, gh, 1)
         .fill({ color: filled ? pol.hi : 0x14233b, alpha: filled ? 0.95 : 0.6 });
     }
 
-    // element glyph (top-right)
-    drawGlyph(deco, card.el, w * 0.72, h * 0.26, Math.min(w, h) * 0.16, accent);
+    // big faint element glyph watermark (only seen on a fully-exposed cell)
+    drawGlyph(deco, card.el, w * 0.5, h * 0.64, Math.min(w, h) * 0.30, accent, 0.12);
+    // crisp element glyph in the top-right of the header
+    drawGlyph(deco, card.el, w * 0.76, h * 0.185, Math.min(w, h) * 0.105, accent);
 
-    // charge number (big, centred-right)
+    // charge number — top-left of the header, always visible
     this.num.visible = true;
     this.num.text = String(card.rank);
-    this.num.style.fontSize = Math.round(h * 0.30);
+    this.num.style.fontSize = Math.round(h * 0.20);
     this.num.style.fill = COLORS.text;
-    this.num.position.set(w * 0.56, h * 0.62);
+    this.num.position.set(w * 0.28, h * 0.185);
   }
 }
 
@@ -177,37 +188,57 @@ export class BoardView {
 
   layout(): void {
     const W = this.app.screen.width, H = this.app.screen.height;
-    const sidePad = Math.max(10, W * 0.012);
-    const cols = 7, gapRatio = 0.24;
-    let cardW = (W - sidePad * 2) / (cols + (cols - 1) * gapRatio);
-    cardW = Math.min(cardW, 132);
-    let gap = cardW * gapRatio;
-    const gridW = cols * cardW + (cols - 1) * gap;
-    const left = (W - gridW) / 2;
+    const topHUD = Math.max(46, H * 0.06);
+
+    // Two banks of vertical conduit rails (4 left + 3 right) flank a central
+    // reactor core-ring; the feed battery sits above the ring. This breaks the
+    // classic row-of-seven + corner-foundations silhouette.
+    const L = 4, Rn = 3, gR = 0.22, bankGap = 0.6, pad = 0.35, rho = 1.18;
+    const units = pad * 2 + (L + (L - 1) * gR) + bankGap + (2 * rho + 1) + bankGap + (Rn + (Rn - 1) * gR);
+    let cardW = Math.min(W / units, 122);
+    cardW = Math.min(cardW, (H - topHUD - 70) / 5.2); // central feed+ring must fit
+    cardW = Math.max(cardW, 36);
     const cardH = cardW * 1.42;
+    const gap = cardW * gR;
     const radius = Math.max(6, cardW * 0.10);
+    const R = cardW * rho;
 
-    const topY = Math.max(54, H * 0.085);
-    const conduitTop = topY + cardH + Math.max(18, cardH * 0.22);
+    const totalW = cardW * units;
+    let x = (W - totalW) / 2 + cardW * pad;
+    const leftXs: number[] = [];
+    for (let i = 0; i < L; i += 1) { leftXs.push(x); x += cardW + gap; }
+    const centerStart = x - gap + cardW * bankGap;
+    const centerW = (2 * rho + 1) * cardW;
+    const cx = centerStart + centerW / 2;
+    x = centerStart + centerW + cardW * bankGap;
+    const rightXs: number[] = [];
+    for (let i = 0; i < Rn; i += 1) { rightXs.push(x); x += cardW + gap; }
 
-    // fan offsets, shrunk so the longest plausible column fits
-    let fanUp = cardH * 0.30, fanDown = cardH * 0.13;
+    const conduitTop = topHUD + 6;
+    const feedY = topHUD + 8;
+    const cy = feedY + cardH * 1.5 + R + 26;
+
+    let fanUp = cardH * 0.34, fanDown = cardH * 0.14;
     const longest = this.longestColumn();
-    const avail = H - conduitTop - Math.max(16, H * 0.03) - cardH;
+    const avail = H - conduitTop - cardH - Math.max(16, H * 0.03);
     const needed = (longest.up - 1) * fanUp + longest.down * fanDown;
-    if (needed > avail && needed > 0) {
-      const k = avail / needed;
-      fanUp *= k; fanDown *= k;
-    }
+    if (needed > avail && needed > 0) { const k = avail / needed; fanUp *= k; fanDown *= k; }
 
-    const colX = (c: number) => left + c * (cardW + gap);
+    const conduitXs = [...leftXs, ...rightXs];          // 0..3 left bank, 4..6 right bank
+    const coreC = [
+      { x: cx, y: cy - R },     // 0 top
+      { x: cx + R, y: cy },     // 1 right
+      { x: cx, y: cy + R },     // 2 bottom
+      { x: cx - R, y: cy },     // 3 left
+    ];
     this.geom = {
-      cardW, cardH, gap, left, topY, conduitTop, fanUp, fanDown, radius,
+      cardW, cardH, gap, conduitTop, fanUp, fanDown, radius,
+      hub: { cx, cy, r: R },
       slots: {
-        stock: { x: colX(0), y: topY },
-        waste: { x: colX(1), y: topY },
-        cores: [colX(3), colX(4), colX(5), colX(6)].map((x) => ({ x, y: topY })),
-        conduits: [0, 1, 2, 3, 4, 5, 6].map((c) => ({ x: colX(c), y: conduitTop })),
+        stock: { x: cx - cardW - gap / 2, y: feedY },
+        waste: { x: cx + gap / 2, y: feedY },
+        cores: coreC.map((c) => ({ x: c.x - cardW / 2, y: c.y - cardH / 2 })),
+        conduits: conduitXs.map((cxx) => ({ x: cxx, y: conduitTop })),
       },
     };
     this.drawBackground();
@@ -228,12 +259,30 @@ export class BoardView {
     const W = this.app.screen.width, H = this.app.screen.height;
     const g = this.bg.clear();
     g.rect(0, 0, W, H).fill({ color: COLORS.bg });
+    const { cardW, conduitTop, slots, radius, hub } = this.geom;
+    const { cx, cy, r: R } = hub;
+
+    // coolant pipes: each conduit feeds the central core-ring
+    for (const s of slots.conduits) {
+      const px = s.x + cardW / 2, py = conduitTop + cardW * 0.2;
+      const ang = Math.atan2(cy - py, cx - px);
+      const ex = cx - Math.cos(ang) * (R + cardW * 0.7), ey = cy - Math.sin(ang) * (R + cardW * 0.7);
+      g.moveTo(px, py).lineTo(ex, ey).stroke({ width: Math.max(2, cardW * 0.06), color: COLORS.panelEdge, alpha: 0.45 });
+      g.circle(ex, ey, cardW * 0.07).fill({ color: COLORS.panelEdge, alpha: 0.6 });
+    }
     // faint vertical rail glow behind each conduit
-    const { cardW, conduitTop, slots, radius } = this.geom;
     for (const s of slots.conduits) {
       g.roundRect(s.x - 4, conduitTop - 10, cardW + 8, H - conduitTop - 6, radius + 4)
         .fill({ color: COLORS.bgGlow, alpha: 0.5 });
     }
+    // central reactor core-ring
+    g.circle(cx, cy, R + cardW * 0.85).fill({ color: COLORS.bgGlow, alpha: 0.6 });
+    g.circle(cx, cy, R + cardW * 0.65).stroke({ width: Math.max(2, cardW * 0.05), color: COLORS.panelEdge, alpha: 0.8 });
+    g.circle(cx, cy, R).stroke({ width: Math.max(1, cardW * 0.03), color: COLORS.panelEdge, alpha: 0.5 });
+    // glowing hub at the centre
+    g.circle(cx, cy, cardW * 0.42).fill({ color: COLORS.panel });
+    g.circle(cx, cy, cardW * 0.42).stroke({ width: 2, color: COLORS.cold, alpha: 0.6 });
+    g.circle(cx, cy, cardW * 0.20).fill({ color: COLORS.cold, alpha: 0.55 });
   }
 
   private layoutHud(): void {
