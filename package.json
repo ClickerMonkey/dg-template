@@ -20,12 +20,32 @@
     "menuPosition": "top-right",
     "image": "cover.png",
     "leaderboards": [
-      { "key": "score", "title": "Reactor Output", "sort": "desc" },
-      { "key": "time", "title": "Fastest Stabilization", "sort": "asc" }
+      {
+        "key": "score",
+        "title": "Reactor Output",
+        "sort": "desc"
+      },
+      {
+        "key": "time",
+        "title": "Fastest Stabilization",
+        "sort": "asc"
+      }
     ],
     "controls": {
-      "up": "KeyW", "down": "KeyS", "left": "KeyA", "right": "KeyD",
-      "buttons": { "0": "Enter", "1": "Escape", "2": "KeyF", "3": "KeyC", "4": "KeyZ", "5": "KeyY", "7": "KeyH", "9": "KeyN" }
+      "up": "KeyW",
+      "down": "KeyS",
+      "left": "KeyA",
+      "right": "KeyD",
+      "buttons": {
+        "0": "Enter",
+        "1": "Escape",
+        "2": "KeyF",
+        "3": "KeyC",
+        "4": "KeyZ",
+        "5": "KeyY",
+        "7": "KeyH",
+        "9": "KeyN"
+      }
     }
   },
   "dependencies": {
