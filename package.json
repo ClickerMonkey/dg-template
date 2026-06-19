@@ -1,10 +1,10 @@
 {
-  "name": "dg-game",
+  "name": "reactor-coolant",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "A diffenderfer.games game (TypeScript + Vite + PixiJS).",
-  "author": "your name here",
+  "description": "Route charged coolant cells through reactor conduits to bring the core online — a neon arcade puzzle of cooling logic.",
+  "author": "diffenderfer.games",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -13,12 +13,20 @@
   },
   "game": {
     "type": "static",
-    "title": "My Game",
-    "description": "Describe your game here — shows on the catalog card.",
+    "title": "Reactor Coolant Routing",
+    "description": "Route charged coolant cells through the reactor's conduits — descending charge, alternating hot/cold polarity — and feed each core its element 1→13 to bring the reactor online. Drag, double-tap to route, chain deliveries for combo output.",
     "build": "npm run build",
     "serveDir": "dist",
     "menuPosition": "top-right",
-    "image": "cover.png"
+    "image": "cover.png",
+    "leaderboards": [
+      { "key": "score", "title": "Reactor Output", "sort": "desc" },
+      { "key": "time", "title": "Fastest Stabilization", "sort": "asc" }
+    ],
+    "controls": {
+      "up": "KeyW", "down": "KeyS", "left": "KeyA", "right": "KeyD",
+      "buttons": { "0": "Enter", "1": "Escape", "2": "KeyF", "3": "KeyC", "4": "KeyZ", "5": "KeyY", "7": "KeyH", "9": "KeyN" }
+    }
   },
   "dependencies": {
     "pixi.js": "^8.6.0"

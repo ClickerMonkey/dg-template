@@ -1,39 +1,52 @@
 /**
- * Starter game for diffenderfer.games — "collect the coins".
+ * Reactor Coolant Routing — a neon arcade game that is, underneath, a faithful
+ * game of Klondike. Route charged energy cells down the cooling conduits
+ * (descending charge, alternating hot/cold polarity) and feed each reactor
+ * core its element from 1 → 13. Clear every cell to bring the reactor online.
  *
- * It's a complete, working example of the pieces a hosted game uses:
- *   - PixiJS v8 for rendering
- *   - hub.input for unified keyboard / mouse / touch / gamepad controls
- *   - hub saves + leaderboards for cloud progress (offline-safe)
- *
- * Replace the gameplay with your own; keep the hub wiring patterns. See
- * CLAUDE.md for the build/integration rules and docs/hub.md for the full hub API.
+ * Built on the diffenderfer.games starter: PixiJS v8 + the shared hub for
+ * cloud saves, stats, leaderboards, and unified keyboard/touch/gamepad input.
  */
-import { Application, Graphics, Text } from 'pixi.js';
+import { Application } from 'pixi.js';
 import { hub } from './hub/hub';
+import { Game, type State } from './engine';
+import { BoardView } from './view';
 
 const app = new Application();
-await app.init({ resizeTo: window, background: '#0d0f14', antialias: true });
+await app.init({ resizeTo: window, background: '#05070d', antialias: true });
 document.body.appendChild(app.canvas);
 
+const game = new Game();
+const board = new BoardView(app, game);
+
 // ---------------------------------------------------------------------------
-// Input — declare named inputs once; they work on every device. The hub draws
-// the on-screen joystick/button for touch and maps gamepads automatically.
+// Input — named inputs read the same on keyboard / gamepad / touch. Pointer
+// drag-and-drop is handled inside the view; these drive the focus cursor and
+// the global actions (draw, auto-route, undo, hint, new reactor).
 // ---------------------------------------------------------------------------
 hub.input.define({
   groups: {
     play: {
       inputs: {
-        left:   { keys: ['a', 'arrowleft'],  gamepad: { axis: [0, '-'] }, touch: { stick: 'move', axis: 'x-' } },
-        right:  { keys: ['d', 'arrowright'], gamepad: { axis: [0, '+'] }, touch: { stick: 'move', axis: 'x+' } },
-        up:     { keys: ['w', 'arrowup'],    gamepad: { axis: [1, '-'] }, touch: { stick: 'move', axis: 'y-' } },
-        down:   { keys: ['s', 'arrowdown'],  gamepad: { axis: [1, '+'] }, touch: { stick: 'move', axis: 'y+' } },
-        action: { keys: [' '], gamepad: { button: 0 }, mouse: { button: 0 }, touch: { button: 'a' } },
+        navLeft:  { keys: ['a', 'arrowleft'],  gamepad: { button: 14 } },
+        navRight: { keys: ['d', 'arrowright'], gamepad: { button: 15 } },
+        navUp:    { keys: ['w', 'arrowup'],    gamepad: { button: 12 } },
+        navDown:  { keys: ['s', 'arrowdown'],  gamepad: { button: 13 } },
+        act:      { keys: ['enter', ' '],      gamepad: { button: 0 } },
+        cancel:   { keys: ['escape', 'backspace'], gamepad: { button: 1 } },
+        draw:     { keys: ['f'],               gamepad: { button: 2 }, touch: { button: 'draw' } },
+        auto:     { keys: ['c'],               gamepad: { button: 3 }, touch: { button: 'auto' } },
+        undo:     { keys: ['z', 'u'],          gamepad: { button: 4 }, touch: { button: 'undo' } },
+        redo:     { keys: ['y'],               gamepad: { button: 5 } },
+        hint:     { keys: ['h'],               gamepad: { button: 7 }, touch: { button: 'hint' } },
+        newgame:  { keys: ['n'],               gamepad: { button: 9 } },
+        toggle:   { keys: ['m'] },
       },
-      axes: { move: { x: ['left', 'right'], y: ['up', 'down'] } },
       virtual: [
-        { id: 'move', type: 'joystick', place: 'bottom-left', size: 140 },
-        { id: 'a', type: 'button', place: 'bottom-right', label: 'A', shape: 'circle', color: '#4ade80' },
+        { id: 'draw',  type: 'button', place: 'bottom-right', label: 'FEED', shape: 'round',  color: '#34c6ff' },
+        { id: 'auto',  type: 'button', place: 'bottom-left',  label: 'AUTO', shape: 'round',  color: '#ffd24d' },
+        { id: 'undo',  type: 'button', place: 'bottom-left',  label: 'UNDO', shape: 'round',  color: '#9fb4d8' },
+        { id: 'hint',  type: 'button', place: 'bottom-left',  label: 'HINT', shape: 'round',  color: '#ffe14d' },
       ],
     },
   },
@@ -41,67 +54,99 @@ hub.input.define({
 hub.input.enable('play');
 
 // ---------------------------------------------------------------------------
-// Scene
+// Saves / scores — offline-safe. We mirror the in-progress game to the cloud
+// (debounced) and resume it at boot; on a win we post score + best time.
 // ---------------------------------------------------------------------------
-const player = new Graphics().rect(-16, -16, 32, 32).fill('#ff5f3b');
-player.position.set(app.screen.width / 2, app.screen.height / 2);
-app.stage.addChild(player);
-
-let coin = spawnCoin();
-let score = 0;
-let best = 0;
-
-const hud = new Text({ text: 'Score: 0   Best: 0', style: { fill: '#e8e6df', fontFamily: 'monospace', fontSize: 18 } });
-hud.position.set(12, 12);
-app.stage.addChild(hud);
-
-const hint = new Text({
-  text: 'Move: WASD / arrows / stick / drag.  Collect the blue coins.',
-  style: { fill: '#6f7787', fontFamily: 'monospace', fontSize: 13 },
-});
-hint.position.set(12, app.screen.height - 26);
-app.stage.addChild(hint);
-
-// Load the cloud/local best for this player (works offline; syncs when online).
-hub.getSave<{ best: number }>('main').then((r) => {
-  if (r.save && typeof r.save.data.best === 'number') { best = r.save.data.best; updateHud(); }
-});
-
-function spawnCoin(): Graphics {
-  const c = new Graphics().circle(0, 0, 11).fill('#38d6ff');
-  c.position.set(40 + Math.random() * (app.screen.width - 80), 40 + Math.random() * (app.screen.height - 80));
-  app.stage.addChild(c);
-  return c;
+let saveTimer = 0;
+function scheduleSave(): void {
+  clearTimeout(saveTimer);
+  saveTimer = window.setTimeout(() => {
+    hub.putSave<State>('main', game.serialize()).catch(() => { /* offline → queued */ });
+  }, 600);
 }
-function updateHud(): void { hud.text = `Score: ${score}   Best: ${best}`; }
 
-// ---------------------------------------------------------------------------
-// Loop
-// ---------------------------------------------------------------------------
-const SPEED = 340;
-app.ticker.add((ticker) => {
-  const dt = ticker.deltaMS / 1000;
-  const move = hub.input.vector('move');           // { x, y, mag } — same on every device
-  player.x = clamp(player.x + move.x * SPEED * dt, 16, app.screen.width - 16);
-  player.y = clamp(player.y + move.y * SPEED * dt, 16, app.screen.height - 16);
+let won = false;
+async function onWin(): Promise<void> {
+  if (won) return;
+  won = true;
+  const s = game.state;
+  board.showToast('REACTOR ONLINE — coolant fully routed!', 9);
+  try {
+    hub.incrStat('wins', 1);
+    hub.maxStat('high_score', s.score);
+    hub.maxStat('best_combo', s.combo);
+    await hub.submitScore('score', s.score, { title: 'Reactor Output', sort: 'desc' });
+    await hub.submitScore('time', Math.round(s.time), { title: 'Fastest Stabilization', sort: 'asc', meta: { moves: s.moves } });
+  } catch { /* offline → queued and synced later */ }
+}
 
-  if (Math.hypot(player.x - coin.x, player.y - coin.y) < 28) {
-    score += 1;
-    coin.destroy(); coin = spawnCoin();
-    if (score > best) {
-      best = score;
-      hub.putSave('main', { best });                       // cloud save (offline-safe)
-      hub.submitScore('high', best, { title: 'High Score' }); // leaderboard
+game.onChange = () => {
+  board.reconcile(true);
+  scheduleSave();
+  if (game.state.won && !won) onWin();
+};
+
+// boot: resume a saved reactor if one exists & isn't already solved
+(async () => {
+  let resumed = false;
+  try {
+    const r = await hub.getSave<State>('main');
+    if (r.save && !r.save.data.won && game.load(r.save.data)) {
+      resumed = true;
+      won = false;
+      board.reconcile(false);
     }
-    updateHud();
+  } catch { /* ignore — start fresh */ }
+  if (!resumed) {
+    game.newGame(1);
+    won = false;
   }
+  hub.incrStat('games', 1);
+  board.showToast(
+    resumed
+      ? 'Reactor restored. Drag cells, double-tap to route, FEED to draw.'
+      : 'Drag cells down the conduits (descending, alternating polarity). Double-tap routes to a core. Tap FEED to draw. [N] new · [M] draw mode · [H] hint',
+    9,
+  );
+})();
 
-  if (hub.input.down('action')) {                  // edge: true the frame it's pressed
-    // example: a one-shot action — replace with yours
-  }
+// re-upload progress when the player signs in mid-session (don't pull)
+window.addEventListener('hub:auth', (e: any) => {
+  if (e.detail && e.detail.user) hub.putSave<State>('main', game.serialize()).catch(() => {});
 });
 
-function clamp(n: number, lo: number, hi: number): number { return n < lo ? lo : n > hi ? hi : n; }
+// ---------------------------------------------------------------------------
+// Main loop — read input edges, advance the timer, animate.
+// ---------------------------------------------------------------------------
+const I = hub.input;
+let drawMode: 1 | 3 = 1;
 
-// keep the hint pinned on resize
-window.addEventListener('resize', () => hint.position.set(12, app.screen.height - 26));
+app.ticker.add((ticker) => {
+  // focus cursor
+  if (I.down('navLeft')) board.cursorMove(-1);
+  if (I.down('navRight')) board.cursorMove(+1);
+  if (I.down('navUp')) board.cursorVertical(-1);
+  if (I.down('navDown')) board.cursorVertical(+1);
+  if (I.down('act')) board.cursorAct();
+  if (I.down('cancel')) board.cursorCancel();
+
+  // global actions
+  if (I.down('draw')) board.onDraw();
+  if (I.down('auto')) board.onAuto();
+  if (I.down('undo')) board.onUndo();
+  if (I.down('redo')) board.onRedo();
+  if (I.down('hint')) board.onHint();
+  if (I.down('newgame')) { won = false; game.newGame(drawMode); board.showToast(`New reactor — draw ${drawMode}.`, 4); }
+  if (I.down('toggle')) {
+    drawMode = drawMode === 1 ? 3 : 1;
+    won = false; game.newGame(drawMode);
+    board.showToast(`Feed mode: draw ${drawMode}. New reactor dealt.`, 5);
+  }
+
+  // session timer (counts up until solved)
+  if (!game.state.won) game.state.time += ticker.deltaMS / 1000;
+
+  board.tick(ticker.deltaMS);
+});
+
+window.addEventListener('resize', () => board.resize());
