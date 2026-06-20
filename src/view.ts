@@ -152,7 +152,7 @@ export class BoardView {
   private fx: Fx[] = [];
 
   private scoreT: Text; private comboT: Text; private timeT: Text; private statusT: Text; private toastT: Text;
-  private toastLife = 0; private toastMax = 1;
+  private toastLife = 0; private toastMax = 1; private taughtEmptyRule = false;
   private hintFlash: { slot: SlotRef; card: Card; t: number } | null = null;
 
   constructor(app: Application, game: Game) {
@@ -375,9 +375,19 @@ export class BoardView {
       }
     });
 
-    // empty conduits
+    // empty conduits — show a faint "full-charge" ghost: only a maxed (13) cell
+    // can seed an empty rail (Klondike's King-to-empty-column rule).
     slots.conduits.forEach((p, i) => {
-      if (this.game.state.conduits[i].length === 0) outline(p, COLORS.panelEdge);
+      if (this.game.state.conduits[i].length !== 0) return;
+      outline(p, COLORS.panelEdge);
+      const seg = 13, x0 = p.x + cardW * 0.08, x1 = p.x + cardW * 0.92, sw = (x1 - x0) / seg;
+      for (let k = 0; k < seg; k += 1) {
+        g.roundRect(x0 + k * sw + sw * 0.12, p.y + cardH * 0.06, sw * 0.76, cardH * 0.04, 1)
+          .fill({ color: COLORS.textDim, alpha: 0.4 });
+      }
+      const mx = p.x + cardW / 2, my = p.y + cardH * 0.52, ss = Math.min(cardW, cardH) * 0.16;
+      g.moveTo(mx - ss, my + ss * 0.4).lineTo(mx, my - ss * 0.5).lineTo(mx + ss, my + ss * 0.4)
+        .stroke({ width: 2, color: COLORS.textDim, alpha: 0.5 });
     });
   }
 
@@ -591,10 +601,16 @@ export class BoardView {
 
   private tryDropDrag(drag: Drag, slot: SlotRef | null): void {
     if (!slot) return;
-    if (!this.commitTo(drag.src, slot)) {
-      // dropped somewhere illegal → wiggle to signal "no"
-      const onPile = slot.kind === 'core' || slot.kind === 'conduit';
-      if (onPile) this.wiggleSrc(drag.src);
+    if (this.commitTo(drag.src, slot)) return;
+    // dropped somewhere illegal → wiggle to signal "no"
+    if (slot.kind === 'core' || slot.kind === 'conduit') this.wiggleSrc(drag.src);
+    // first time someone tries a non-13 onto an empty rail, explain the rule
+    if (slot.kind === 'conduit' && this.game.state.conduits[slot.i].length === 0 && !this.taughtEmptyRule) {
+      const cards = this.game.cardsOf(drag.src);
+      if (cards.length && cards[0].rank !== 13) {
+        this.showToast('Only a full-charge 13 cell can seed an empty conduit.', 4);
+        this.taughtEmptyRule = true;
+      }
     }
   }
 
@@ -798,6 +814,24 @@ export class BoardView {
     const g = this.hi.clear();
     const { cardW, cardH, radius, slots } = this.geom;
 
+    // valid drop targets for the cell currently held (drag) or selected — this
+    // makes the rules visible (e.g. an empty rail only lights up for a 13).
+    const activeSrc = this.drag ? this.drag.src : this.selection;
+    if (activeSrc) {
+      const pulse = 0.45 + 0.3 * Math.sin(performance.now() / 170);
+      for (let i = 0; i < 4; i += 1) {
+        if (this.game.canMove(activeSrc, { kind: 'core', i })) {
+          const p = slots.cores[i];
+          g.roundRect(p.x - 4, p.y - 4, cardW + 8, cardH + 8, radius + 4).stroke({ width: 3, color: COLORS.select, alpha: pulse });
+        }
+      }
+      for (let i = 0; i < 7; i += 1) {
+        if (!this.game.canMove(activeSrc, { kind: 'conduit', i })) continue;
+        const r = this.landingRect(i);
+        g.roundRect(r.x - 4, r.y - 4, cardW + 8, cardH + 8, radius + 4).stroke({ width: 3, color: COLORS.select, alpha: pulse });
+      }
+    }
+
     // selection highlight
     if (this.selection) {
       const ids = this.game.cardsOf(this.selection).map((c) => c.id);
@@ -838,6 +872,15 @@ export class BoardView {
       const p = this.slotPos(this.hintFlash.slot);
       g.roundRect(p.x - 4, p.y - 4, cardW + 8, cardH + 8, radius + 4).stroke({ width: 4, color: COLORS.hint, alpha: 0.7 });
     }
+  }
+
+  /** Where the next cell would land in a conduit (for target highlighting). */
+  private landingRect(i: number): P {
+    const col = this.game.state.conduits[i];
+    const p = this.geom.slots.conduits[i];
+    if (!col.length) return { x: p.x, y: p.y };
+    const last = this.cardViews.get(col[col.length - 1].id);
+    return { x: p.x, y: last ? last.vy : p.y };
   }
 
   private slotPos(slot: SlotRef): P {
