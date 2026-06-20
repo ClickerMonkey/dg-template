@@ -17,7 +17,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const host = process.argv[2] || process.env.DG_HOST || resolve(root, '..', 'diffenderfer-games');
 const src = join(host, 'clients');
 const dest = join(root, 'src', 'hub');
-const files = ['hub.ts', 'input.ts', 'overlay.ts', 'legacy.ts'];
+const files = ['hub.ts', 'input.ts', 'overlay.ts', 'legacy.ts', 'daily.ts'];
 
 if (!existsSync(src)) {
   console.error(`Host client source not found: ${src}`);

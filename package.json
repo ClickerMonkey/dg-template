@@ -18,7 +18,8 @@
     "build": "npm run build",
     "serveDir": "dist",
     "menuPosition": "top-right",
-    "image": "cover.png"
+    "image": "cover.png",
+    "dailyChallenges": true
   },
   "dependencies": {
     "pixi.js": "^8.6.0"
