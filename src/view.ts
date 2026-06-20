@@ -47,6 +47,7 @@ class CardView extends Container {
   card: Card;
   vx = 0; vy = 0;            // current (animated) position
   tx = 0; ty = 0;            // target
+  wig = 0;                   // wiggle time remaining (s) — "no legal move" feedback
   private body = new Graphics();
   private deco = new Graphics();
   private num: Text;
@@ -188,15 +189,22 @@ export class BoardView {
 
   layout(): void {
     const W = this.app.screen.width, H = this.app.screen.height;
-    const topHUD = Math.max(46, H * 0.06);
+    // Portrait/narrow screens (phones) get a stacked layout; wide screens get
+    // the flanking-banks layout. Both keep the central reactor core-ring.
+    if (W / H < 1.1) this.layoutPortrait(W, H);
+    else this.layoutLandscape(W, H);
+    this.drawBackground();
+    this.layoutHud();
+  }
 
-    // Two banks of vertical conduit rails (4 left + 3 right) flank a central
-    // reactor core-ring; the feed battery sits above the ring. This breaks the
-    // classic row-of-seven + corner-foundations silhouette.
+  private layoutLandscape(W: number, H: number): void {
+    const topHUD = Math.max(46, H * 0.06);
+    // Two banks of vertical conduit rails (4 left + 3 right) flank the ring;
+    // the feed battery sits above it.
     const L = 4, Rn = 3, gR = 0.22, bankGap = 0.6, pad = 0.35, rho = 1.18;
     const units = pad * 2 + (L + (L - 1) * gR) + bankGap + (2 * rho + 1) + bankGap + (Rn + (Rn - 1) * gR);
     let cardW = Math.min(W / units, 122);
-    cardW = Math.min(cardW, (H - topHUD - 70) / 5.2); // central feed+ring must fit
+    cardW = Math.min(cardW, (H - topHUD - 70) / 5.2);
     cardW = Math.max(cardW, 36);
     const cardH = cardW * 1.42;
     const gap = cardW * gR;
@@ -217,14 +225,54 @@ export class BoardView {
     const conduitTop = topHUD + 6;
     const feedY = topHUD + 8;
     const cy = feedY + cardH * 1.5 + R + 26;
+    const { fanUp, fanDown } = this.fans(cardH, conduitTop, H, Math.max(16, H * 0.03));
 
+    this.commitGeom(cardW, cardH, gap, radius, conduitTop, fanUp, fanDown, cx, cy, R, feedY,
+      [...leftXs, ...rightXs], { stockX: cx - cardW - gap / 2, wasteX: cx + gap / 2, feedY });
+  }
+
+  private layoutPortrait(W: number, H: number): void {
+    const topHUD = Math.max(40, H * 0.035);
+    const sidePad = Math.max(8, W * 0.02);
+    const cols = 7, gR = 0.16;
+    let cardW = (W - sidePad * 2) / (cols + (cols - 1) * gR);
+    cardW = Math.min(cardW, 116);
+    const cardH = cardW * 1.42;
+    const gap = cardW * gR;
+    const radius = Math.max(5, cardW * 0.10);
+    const R = cardW * 1.12;
+    const gridW = cols * cardW + (cols - 1) * gap;
+    const left = (W - gridW) / 2;
+
+    const cx = W / 2;
+    const feedY = topHUD + 6;
+    const cy = feedY + cardH + 16 + R;                 // ring sits below the feed row
+    const conduitTop = cy + R + cardH * 0.5 + 16;       // conduits across the bottom
+    // leave room at the very bottom for the on-screen control buttons on touch
+    const bottomReserve = Math.max(64, H * 0.10);
+    const { fanUp, fanDown } = this.fans(cardH, conduitTop, H, bottomReserve);
+
+    const conduitXs: number[] = [];
+    for (let c = 0; c < cols; c += 1) conduitXs.push(left + c * (cardW + gap));
+
+    this.commitGeom(cardW, cardH, gap, radius, conduitTop, fanUp, fanDown, cx, cy, R, feedY,
+      conduitXs, { stockX: cx - cardW - gap / 2, wasteX: cx + gap / 2, feedY });
+  }
+
+  private fans(cardH: number, conduitTop: number, H: number, bottomReserve: number): { fanUp: number; fanDown: number } {
     let fanUp = cardH * 0.34, fanDown = cardH * 0.14;
     const longest = this.longestColumn();
-    const avail = H - conduitTop - cardH - Math.max(16, H * 0.03);
+    const avail = H - conduitTop - cardH - bottomReserve;
     const needed = (longest.up - 1) * fanUp + longest.down * fanDown;
     if (needed > avail && needed > 0) { const k = avail / needed; fanUp *= k; fanDown *= k; }
+    return { fanUp, fanDown };
+  }
 
-    const conduitXs = [...leftXs, ...rightXs];          // 0..3 left bank, 4..6 right bank
+  private commitGeom(
+    cardW: number, cardH: number, gap: number, radius: number, conduitTop: number,
+    fanUp: number, fanDown: number, cx: number, cy: number, R: number, feedY: number,
+    conduitXs: number[], feed: { stockX: number; wasteX: number; feedY: number },
+  ): void {
     const coreC = [
       { x: cx, y: cy - R },     // 0 top
       { x: cx + R, y: cy },     // 1 right
@@ -235,14 +283,12 @@ export class BoardView {
       cardW, cardH, gap, conduitTop, fanUp, fanDown, radius,
       hub: { cx, cy, r: R },
       slots: {
-        stock: { x: cx - cardW - gap / 2, y: feedY },
-        waste: { x: cx + gap / 2, y: feedY },
+        stock: { x: feed.stockX, y: feed.feedY },
+        waste: { x: feed.wasteX, y: feed.feedY },
         cores: coreC.map((c) => ({ x: c.x - cardW / 2, y: c.y - cardH / 2 })),
-        conduits: conduitXs.map((cxx) => ({ x: cxx, y: conduitTop })),
+        conduits: conduitXs.map((xx) => ({ x: xx, y: conduitTop })),
       },
     };
-    this.drawBackground();
-    this.layoutHud();
   }
 
   private longestColumn(): { up: number; down: number } {
@@ -469,7 +515,7 @@ export class BoardView {
   private onMove = (e: any): void => {
     if (!this.drag) return;
     const x = e.global.x, y = e.global.y;
-    if (!this.drag.moved && Math.hypot(x - this.drag.startX, y - this.drag.startY) > 6) this.drag.moved = true;
+    if (!this.drag.moved && Math.hypot(x - this.drag.startX, y - this.drag.startY) > 8) this.drag.moved = true;
     this.drag.px = x; this.drag.py = y;
   };
 
@@ -492,13 +538,13 @@ export class BoardView {
 
     if (slot && slot.kind === 'stock') { this.onDraw(); this.selection = null; this.updateHi(); return; }
 
-    // double-tap → route to core
+    // double-tap → auto-route (core first, then any legal conduit, else wiggle)
     if (hit) {
       const now = performance.now();
       if (this.lastTap.id === hit.id && now - this.lastTap.t < 320) {
         this.lastTap = { id: -1, t: 0 };
-        const src = this.srcFromTopOf(hit.loc);
-        if (src && this.game.sendToCore(src).ok) { this.bump(); return; }
+        const src = this.srcFromLoc(hit.loc) || this.srcFromTopOf(hit.loc);
+        if (src) { if (!this.autoMove(src)) this.wiggleSrc(src); this.selection = null; this.updateHi(); return; }
       }
       this.lastTap = { id: hit.id, t: now };
     }
@@ -506,11 +552,12 @@ export class BoardView {
     if (this.selection) {
       // try to route the current selection to the tapped pile
       if (slot && this.commitTo(this.selection, slot)) { this.selection = null; this.updateHi(); return; }
-      // tapping the same selected card → quick route to core
+      // tapping the same selected card → auto-route it
       if (hit) {
-        const again = this.srcFromTopOf(hit.loc);
-        if (again && this.sameSource(again, this.selection) && this.game.sendToCore(again).ok) {
-          this.selection = null; this.updateHi(); this.bump(); return;
+        const again = this.srcFromLoc(hit.loc) || this.srcFromTopOf(hit.loc);
+        if (again && this.sameSource(again, this.selection)) {
+          if (!this.autoMove(again)) this.wiggleSrc(again);
+          this.selection = null; this.updateHi(); return;
         }
       }
       this.selection = null;
@@ -544,7 +591,44 @@ export class BoardView {
 
   private tryDropDrag(drag: Drag, slot: SlotRef | null): void {
     if (!slot) return;
-    this.commitTo(drag.src, slot);
+    if (!this.commitTo(drag.src, slot)) {
+      // dropped somewhere illegal → wiggle to signal "no"
+      const onPile = slot.kind === 'core' || slot.kind === 'conduit';
+      if (onPile) this.wiggleSrc(drag.src);
+    }
+  }
+
+  /**
+   * Auto-route a source: first to its reactor core, otherwise to the best legal
+   * conduit (prefer building on an existing stack over opening an empty rail).
+   * Returns false if there's nowhere legal to go.
+   */
+  private autoMove(src: Source): boolean {
+    const cards = this.game.cardsOf(src);
+    if (!cards.length) return false;
+    // 1) a single cell → its core, if it fits
+    if (cards.length === 1 && this.game.canMove(src, { kind: 'core', i: cards[0].el })) {
+      return this.commitTo(src, { kind: 'core', i: cards[0].el });
+    }
+    // 2) a conduit that already has cells (builds a sequence)
+    let emptyTarget = -1;
+    for (let i = 0; i < 7; i += 1) {
+      if (!this.game.canMove(src, { kind: 'conduit', i })) continue;
+      if (this.game.state.conduits[i].length > 0) return this.commitTo(src, { kind: 'conduit', i });
+      if (emptyTarget < 0) emptyTarget = i;
+    }
+    // 3) an empty conduit — but not if that's a no-op (moving a whole rail to another empty rail)
+    if (emptyTarget >= 0 && !(src.kind === 'conduit' && src.start === 0)) {
+      return this.commitTo(src, { kind: 'conduit', i: emptyTarget });
+    }
+    return false;
+  }
+
+  private wiggleSrc(src: Source): void {
+    for (const c of this.game.cardsOf(src)) {
+      const v = this.cardViews.get(c.id);
+      if (v) v.wig = 0.4;
+    }
   }
 
   /** Attempt to move a source onto a slot; returns true on success + FX. */
@@ -601,10 +685,11 @@ export class BoardView {
 
     if (this.selection) {
       if (this.commitTo(this.selection, slot)) { this.selection = null; this.updateHi(); return; }
-      // act on own source again → route to core
+      // act on own source again → auto-route it
       const top = this.topSourceOfSlot(slot);
-      if (top && this.sameSource(top, this.selection) && this.game.sendToCore(top).ok) {
-        this.selection = null; this.updateHi(); this.bump(); return;
+      if (top && this.sameSource(top, this.selection)) {
+        if (!this.autoMove(top)) this.wiggleSrc(top);
+        this.selection = null; this.updateHi(); return;
       }
       this.selection = null; this.updateHi();
       return;
@@ -780,7 +865,9 @@ export class BoardView {
       }
       v.vx = snap ? tx : lerp(v.vx, tx, k);
       v.vy = snap ? ty : lerp(v.vy, ty, k);
-      v.position.set(v.vx, v.vy);
+      let wx = 0;
+      if (v.wig > 0) { v.wig = Math.max(0, v.wig - dt); wx = Math.sin((0.4 - v.wig) * 46) * this.geom.cardW * 0.12 * (v.wig / 0.4); }
+      v.position.set(v.vx + wx, v.vy);
     }
 
     // FX life

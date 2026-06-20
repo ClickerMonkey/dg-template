@@ -13,7 +13,15 @@ import { Game, type State } from './engine';
 import { BoardView } from './view';
 
 const app = new Application();
-await app.init({ resizeTo: window, background: '#05070d', antialias: true });
+await app.init({
+  resizeTo: window,
+  background: '#05070d',
+  antialias: true,
+  // Render at the device's pixel density so neon edges/text stay crisp on
+  // high-DPI and mobile screens (capped for fill-rate sanity).
+  resolution: Math.min(window.devicePixelRatio || 1, 3),
+  autoDensity: true,
+});
 document.body.appendChild(app.canvas);
 
 const game = new Game();
