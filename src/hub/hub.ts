@@ -1523,6 +1523,13 @@ function fallbackNotice(text: string, ms = 0): void {
   if (fallbackTimer) clearTimeout(fallbackTimer);
   fallbackTimer = ms > 0 ? setTimeout(hideFallbackNotice, ms) : null;
 }
+/** Why the live social runtime failed to load on this page (set by menu.js), or ''. */
+function runtimeError(): string {
+  if (typeof window === 'undefined') return '';
+  const e = (window as unknown as { __HUB_RT_ERROR__?: unknown }).__HUB_RT_ERROR__;
+  return typeof e === 'string' ? e.slice(0, 120) : '';
+}
+
 function hideFallbackNotice(): void {
   if (fallbackTimer) { clearTimeout(fallbackTimer); fallbackTimer = null; }
   if (typeof document !== 'undefined') document.getElementById(FALLBACK_ID)?.remove();
@@ -1541,13 +1548,22 @@ function makeSocialNamespaces(bridge: RtBridge) {
   });
   // Openers wait for the runtime. A tap must never look dead, so if it isn't
   // there within a moment say so, and if it never arrives say how to recover.
+  const failed = (): void => {
+    const why = runtimeError();
+    fallbackNotice(`Friends couldn't load${why ? ` (${why})` : ''}. Reload the page to try again.`, 8000);
+  };
   const open = (fn: (rt: RealtimeApi) => void): void => {
     if (bridge.current()) { bridge.whenReady().then(fn, () => {}); return; }
+    // The menu already knows the runtime failed (see menu.js wireSocial).
+    if (runtimeError()) { failed(); return; }
     const slow = setTimeout(() => fallbackNotice('Friends are still loading…'), 1500);
-    bridge.whenReady().then((rt) => { clearTimeout(slow); hideFallbackNotice(); fn(rt); }, () => {
-      clearTimeout(slow);
-      fallbackNotice("Friends couldn't load. Reload the page to try again.", 6000);
-    });
+    let settled = false;
+    const onFailed = (): void => { if (!settled) { settled = true; clearTimeout(slow); failed(); } };
+    if (typeof window !== 'undefined') window.addEventListener('hub:rt-failed', onFailed, { once: true });
+    bridge.whenReady().then((rt) => {
+      if (settled) return;
+      settled = true; clearTimeout(slow); hideFallbackNotice(); fn(rt);
+    }, onFailed);
   };
 
   const presenceApi: HubPresenceApi = {
