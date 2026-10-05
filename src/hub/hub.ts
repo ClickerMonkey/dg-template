@@ -1459,6 +1459,75 @@ function wrap<T>(p: Promise<T>): Promise<T> {
   return p.catch((err: unknown) => { throw toHubError(err); });
 }
 
+/** One JSON POST to the hub API (same-origin cookie), mapped to hub errors. */
+async function postJson<T>(path: string, body: unknown): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(detectApiBase() + path, {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    });
+  } catch {
+    throw new OfflineError();
+  }
+  let json: unknown = null;
+  try { json = await res.json(); } catch { /* empty / non-JSON body */ }
+  if (!res.ok) {
+    const d = errorDetails(json);
+    throw errorFor(d.error || `Request failed (${res.status})`, res.status, d);
+  }
+  return json as T;
+}
+
+/**
+ * A 60-second identity ticket for this game's own server (POST /mp/ticket).
+ *
+ * Deliberately a direct request rather than a call into the live social
+ * runtime: a game's "Play online" must not depend on /_hub/social.js having
+ * loaded (on the first visit after a deploy the service worker can still
+ * serve an older menu that never loads it). If the page has no session yet,
+ * a guest one is created and the request retried once.
+ */
+async function fetchTicket(): Promise<string> {
+  const slug = detectSlug();
+  if (!slug) throw new HubError('Hub: could not determine the game slug.');
+  try {
+    return (await postJson<{ ticket: string }>('/mp/ticket', { slug })).ticket;
+  } catch (err) {
+    if (!(err instanceof HubError) || err.status !== 401) throw err;
+    await postJson('/auth/guest', {});
+    return (await postJson<{ ticket: string }>('/mp/ticket', { slug })).ticket;
+  }
+}
+
+/**
+ * A minimal top-centre notice for when the social runtime (which owns the real
+ * toasts) isn't available. Plain DOM with inline styles in the hub palette;
+ * one at a time; auto-hides after `ms` (0 = until replaced or hidden).
+ */
+const FALLBACK_ID = 'hub-fallback-notice';
+let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
+function fallbackNotice(text: string, ms = 0): void {
+  if (typeof document === 'undefined' || !document.body) return;
+  let el = document.getElementById(FALLBACK_ID);
+  if (!el) {
+    el = document.createElement('div');
+    el.id = FALLBACK_ID;
+    el.setAttribute('role', 'status');
+    el.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:2147483647;'
+      + 'max-width:min(92vw,420px);padding:10px 14px;border-radius:10px;font:13px/1.4 "Space Mono",ui-monospace,monospace;'
+      + 'background:#11141c;color:#e8e6df;border:1px solid #2a3142;box-shadow:0 8px 24px rgba(0,0,0,.5);pointer-events:none;';
+    document.body.appendChild(el);
+  }
+  el.textContent = text;
+  if (fallbackTimer) clearTimeout(fallbackTimer);
+  fallbackTimer = ms > 0 ? setTimeout(hideFallbackNotice, ms) : null;
+}
+function hideFallbackNotice(): void {
+  if (fallbackTimer) { clearTimeout(fallbackTimer); fallbackTimer = null; }
+  if (typeof document !== 'undefined') document.getElementById(FALLBACK_ID)?.remove();
+}
+
 /** Build the page's social namespaces around one bridge. */
 function makeSocialNamespaces(bridge: RtBridge) {
   // Latest-state calls replay on load: only the last value matters.
@@ -1470,8 +1539,15 @@ function makeSocialNamespaces(bridge: RtBridge) {
     if (busy) rt.mp.setBusy(busy.busy, { label: busy.label });
     if (quiet !== null) rt.notify.setQuiet(quiet);
   });
+  // Openers wait for the runtime. A tap must never look dead, so if it isn't
+  // there within a moment say so, and if it never arrives say how to recover.
   const open = (fn: (rt: RealtimeApi) => void): void => {
-    bridge.whenReady().then(fn, () => { /* no runtime: openers are no-ops */ });
+    if (bridge.current()) { bridge.whenReady().then(fn, () => {}); return; }
+    const slow = setTimeout(() => fallbackNotice('Friends are still loading…'), 1500);
+    bridge.whenReady().then((rt) => { clearTimeout(slow); hideFallbackNotice(); fn(rt); }, () => {
+      clearTimeout(slow);
+      fallbackNotice("Friends couldn't load. Reload the page to try again.", 6000);
+    });
   };
 
   const presenceApi: HubPresenceApi = {
@@ -1502,7 +1578,7 @@ function makeSocialNamespaces(bridge: RtBridge) {
       getUiStack().setCanPause(!b);
       bridge.current()?.mp.setBusy(busy.busy, { label: busy.label });
     },
-    ticket: () => bridge.call((rt) => rt.mp.ticket()),
+    ticket: () => fetchTicket(),
     setJoinInfo: (partyId, info) => bridge.call((rt) => rt.mp.setJoinInfo(partyId, info)),
     party: () => bridge.current()?.mp.party() ?? null,
   };
