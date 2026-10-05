@@ -332,7 +332,9 @@ and [own server §9](#client-side-own-server).
   `hub.social.openInvite()`, or `hub.social.openInvite({ mode: 'ranked' })`. The picker
   lists online friends and calls the hub for you.
 - **Your own friend list?** `await hub.social.friends()` returns `FriendEntry[]` (each
-  `{id, username, avatar, presence, …}`) and `hub.mp.invite(userId, { mode })` sends one.
+  `{id, username, avatar, presence, …}`). Call it once; after that
+  `hub.social.on('friends', list => …)` hands you every change (presence included), so
+  render from the event's list rather than calling `friends()` again. And `hub.mp.invite(userId, { mode })` sends one.
   It rejects with `HubError` (`code`: `cannot_invite`, `party_full`, `already_member`,
   `not_supported`, `bad_mode`, `rate_limited`, `claim_required`). Show `err.message`.
 - **What happens:** the inviter gets a "waiting…" chip and a **`host` launch** (in place).

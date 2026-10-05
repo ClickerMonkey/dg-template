@@ -857,8 +857,9 @@ if (confirm(`Sell your ${name} for ${price} coins?`)) {
 
 ## Favorites
 
-Players can **star** games. Starred games sort to the top of the menu's game
-list. Stars are stored per account (guests too; they follow a guest through
+Players can **star** games — on the home page's game cards or in the menu's game
+list. Starred games sort to the top of both (the home page's other games follow the
+player's chosen sort, *Most played* or *A–Z*, remembered on the device). Stars are stored per account (guests too; they follow a guest through
 claim/login) and mirrored to `localStorage`, so the list still renders offline.
 
 ```js
