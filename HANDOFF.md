@@ -63,9 +63,11 @@ app sees requests as if mounted at root — **but** the browser still sees
 | `hidden`      | no       | `true` skips this app from the catalog                      |
 | `hub`         | no       | `false` opts out of the shared hub menu/SDK injection       |
 | `menuPosition`| no       | Hub menu corner: `top-left` (default)/`top-right`/`bottom-left`/`bottom-right` |
+| `menuOffset`  | no       | Push the menu button away from its corner: `{ "x": 0, "y": 100 }` px (0–600), or a number = vertical only |
 | `leaderboards`| no       | Pre-declared boards `[{ key, title, sort }]` (see the hub)  |
 | `pwa`         | no       | `false` opts out of the install/offline (PWA) tags + service worker |
 | `controls`    | no       | Gamepad→key map for controller/arcade play (see the hub)    |
+| `multiplayer` | no       | Makes the game an online invite/join target — see `docs/multiplayer.md` |
 
 ### Process (build then run a long-lived server the catalog proxies to)
 
@@ -94,9 +96,11 @@ app sees requests as if mounted at root — **but** the browser still sees
 | `hidden`      | no       | `true` skips this app from the catalog                      |
 | `hub`         | no       | `false` opts out of the shared hub menu/SDK injection       |
 | `menuPosition`| no       | Hub menu corner (see static table)                          |
+| `menuOffset`  | no       | Menu button offset from its corner, px (see static table)   |
 | `leaderboards`| no       | Pre-declared boards `[{ key, title, sort }]` (see the hub)  |
 | `pwa`         | no       | `false` opts out of the install/offline (PWA) tags + service worker |
 | `controls`    | no       | Gamepad→key map for controller/arcade play (see the hub)    |
+| `multiplayer` | no       | Makes the game an online invite/join target — see `docs/multiplayer.md` |
 
 > **Ports:** the host assigns each process app a free port (via `PORT`/
 > `GAME_PORT` and the `{{PORT}}` placeholder) and **probes that it's actually
@@ -119,6 +123,9 @@ Equivalent env vars are also injected into the spawned process:
 
 - `GAME_PORT`, `GAME_PATH`, `GAME_SLUG`
 - `PORT` (process-type only)
+- `HUB_URL` + `HUB_APP_KEY` (hub-enabled process apps): the hub's loopback URL and
+  this game's private key, used by `server/hub-server.mjs` to verify player
+  tickets and post trusted results (see `docs/multiplayer.md` §9)
 
 Prefer env vars over placeholders when your tooling supports them —
 placeholders that don't resolve throw a hard error.
@@ -249,10 +256,16 @@ analytics — with **nothing to set up**. The host injects a style-isolated menu
   on reconnect — and are installable to a home screen as a PWA. Nothing to add.
 - **Controllers/arcade:** standard gamepads and USB arcade encoders work in every
   game with no code; map keys per game with `game.controls`.
+- **Friends, invites, rooms & chat:** every game gets the hub's friends, presence,
+  DMs and invites with no code. To play *together* (lobbies, invites into your
+  game, hub relay rooms, own-server tickets, kid-safe chat) add
+  `game.multiplayer` and follow **`docs/multiplayer.md`**. Every game — online or
+  not — calls `hub.overlay.autoPause(...)` so it pauses when the hub menu opens.
 - **Opt out** of hub injection with `"hub": false` or PWA tags with `"pwa": false`;
   **move the menu** with `menuPosition`.
 
-Full contract, endpoint reference, and examples: **`docs/hub.md`**.
+Full contract, endpoint reference, and examples: **`docs/hub.md`**. Online play:
+**`docs/multiplayer.md`**.
 
 ---
 
@@ -263,6 +276,11 @@ Full contract, endpoint reference, and examples: **`docs/hub.md`**.
 2. Pick `static` vs `process`:
    - Outputs a folder of files served by the host → **static**.
    - Needs a long-lived server (API, SSR, websockets) → **process**.
+   - **Online multiplayer?** Read `docs/multiplayer.md` §1 first. Most online
+     games stay **static** and use hub relay rooms (`transport: "hub-rooms"`,
+     no server code). Only real-time/competitive games that need an
+     authoritative server are **process** apps (`transport: "own-server"`);
+     they verify players with hub tickets and vendor `server/hub-server.mjs`.
 3. Add a complete `game` block to `package.json` with type, title,
    build/start commands, and `serveDir` or `healthPath` as appropriate.
 4. If this is a Vite (or other bundler) project, set `base: './'` (or

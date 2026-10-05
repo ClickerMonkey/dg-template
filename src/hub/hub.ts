@@ -29,6 +29,16 @@ export * from './input';
 import { DailySystem } from './daily';
 import type { DailyHost } from './daily';
 export * from './daily';
+import { getUiStack } from './uistack';
+import type { UiStack } from './uistack';
+export * from './uistack';
+// Types only: the live social client is the runtime bundle /_hub/social.js, so
+// a vendored copy of this file never needs its code (multiplayer-impl.md §7.2).
+import type {
+  ChatMode, FriendEntry, HubRoom, InviteResult, JoinInfoEvent, Launch, Party, PlayerRef,
+  PresenceInput, RealtimeApi, RoomCreateOptions, RoomEvents, RoomInfo, SocialCounts, SocialEvents,
+} from './social/rt-types';
+export type * from './social/rt-types';
 
 // ---------------------------------------------------------------------------
 // Wire types — these mirror the JSON the API returns.
@@ -165,16 +175,40 @@ export interface HubOptions {
 // ---------------------------------------------------------------------------
 
 /**
+ * Machine-readable extras the server attaches to error bodies
+ * (`{error, code, reason, hint, retryAfterMs}`, multiplayer-impl.md §0).
+ */
+export interface HubErrorDetails {
+  /** Stable error code, e.g. 'content_rejected', 'rate_limited', 'suspended', 'claim_required'. */
+  code?: string;
+  /** Why content was refused, e.g. 'link', 'language', 'muted', 'chat_off'. */
+  reason?: string;
+  /** A kid-friendly sentence to show the player. */
+  hint?: string;
+  /** How long to wait before retrying (rate limits, mutes). */
+  retryAfterMs?: number;
+}
+
+/**
  * Thrown by every hub call that fails. `status` is the HTTP status when the
  * server responded (e.g. 401 = not signed in, 404 = unknown game/board, 413 =
  * too large), or `undefined` for a transport failure (offline / no host).
+ * Social/multiplayer errors also carry {@link HubErrorDetails}.
  */
 export class HubError extends Error {
   readonly status?: number;
-  constructor(message: string, status?: number) {
+  readonly code?: string;
+  readonly reason?: string;
+  readonly hint?: string;
+  readonly retryAfterMs?: number;
+  constructor(message: string, status?: number, details: HubErrorDetails = {}) {
     super(message);
     this.name = 'HubError';
     this.status = status;
+    this.code = details.code;
+    this.reason = details.reason;
+    this.hint = details.hint;
+    this.retryAfterMs = details.retryAfterMs;
   }
   /** True when the failure was a network/transport error, not an HTTP status. */
   get isOffline(): boolean {
@@ -188,6 +222,39 @@ export class OfflineError extends HubError {
     super(message);
     this.name = 'OfflineError';
   }
+}
+
+/**
+ * Text was refused by the safety filter (HTTP 422 / a WS ack with
+ * `code:'content_rejected'`). Keep the player's draft and show `hint`; when
+ * `reason` is 'muted' or 'rate_limited', `retryAfterMs` says how long to wait.
+ */
+export class ContentRejectedError extends HubError {
+  constructor(message: string, status: number | undefined, details: HubErrorDetails) {
+    super(message, status, details);
+    this.name = 'ContentRejectedError';
+  }
+}
+
+/** Narrow an unknown JSON error body to the fields we understand. */
+function errorDetails(body: unknown): HubErrorDetails & { error?: string } {
+  if (!body || typeof body !== 'object') return {};
+  const b = body as Record<string, unknown>;
+  const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
+  return {
+    error: str(b.error),
+    code: str(b.code),
+    reason: str(b.reason),
+    hint: str(b.hint),
+    retryAfterMs: typeof b.retryAfterMs === 'number' ? b.retryAfterMs : undefined,
+  };
+}
+
+/** Build the right error class for a failed response (422 → ContentRejectedError). */
+function errorFor(message: string, status: number | undefined, details: HubErrorDetails): HubError {
+  return status === 422 || details.code === 'content_rejected'
+    ? new ContentRejectedError(message, status, details)
+    : new HubError(message, status, details);
 }
 
 // ---------------------------------------------------------------------------
@@ -489,6 +556,19 @@ export interface SnapshotResponse {
   leaderboards: GameLeaderboards[];
 }
 
+// Favorites are site-wide (not per game), so they live under one global key
+// rather than in the per-slug LocalStore.
+const FAVORITES_KEY = 'hub:favorites';
+function readLocalFavorites(): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(FAVORITES_KEY) || '[]');
+    return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : [];
+  } catch { return []; }
+}
+function writeLocalFavorites(games: string[]): void {
+  try { localStorage.setItem(FAVORITES_KEY, JSON.stringify(games)); } catch { /* storage full/blocked */ }
+}
+
 // ---------------------------------------------------------------------------
 // The client
 // ---------------------------------------------------------------------------
@@ -541,6 +621,25 @@ export class Hub {
    *  it doesn't cover the game, show it on pause/menus). Page-wide; see
    *  {@link HubMenuControl}. */
   get menu(): HubMenuControl { return hubMenu; }
+
+  /** Hub UI covering the game (menu, dialogs, chat): open/close events and
+   *  `autoPause`. Page-wide; see {@link UiStack}. */
+  get overlay(): UiStack { return getUiStack(); }
+
+  /** Tell friends what you're doing in this game. See {@link HubPresenceApi}. */
+  get presence(): HubPresenceApi { return social.presence; }
+
+  /** Friends, players and the hub's social dialogs. See {@link HubSocialApi}. */
+  get social(): HubSocialApi { return social.social; }
+
+  /** Invites, launches, the leave guard and game tickets. See {@link HubMpApi}. */
+  get mp(): HubMpApi { return social.mp; }
+
+  /** Hub relay rooms for games without a server. See {@link HubRoomsApi}. */
+  get rooms(): HubRoomsApi { return social.rooms; }
+
+  /** Toast behaviour during intense play. See {@link HubNotifyApi}. */
+  get notify(): HubNotifyApi { return social.notify; }
 
   private _daily: DailySystem | null = null;
   /** Daily challenges. A game calls `hub.daily.define({ play })` once at load;
@@ -634,14 +733,13 @@ export class Hub {
     // Any response at all means the network is up again.
     if (!this.online) this.setOnline(true);
     if (!res.ok) {
-      let message = `Request failed (${res.status})`;
+      let details: ReturnType<typeof errorDetails> = {};
       try {
-        const body = (await res.json()) as { error?: string };
-        if (body?.error) message = body.error;
+        details = errorDetails(await res.json());
       } catch {
         /* non-JSON error body */
       }
-      throw new HubError(message, res.status);
+      throw errorFor(details.error || `Request failed (${res.status})`, res.status, details);
     }
     if (res.status === 204) return undefined as T;
     return (await res.json()) as T;
@@ -1049,6 +1147,32 @@ export class Hub {
     );
   }
 
+  // --- favorites ---
+
+  /**
+   * Starred games (slugs), shown first in the menu's game list. Server-backed
+   * per account, mirrored to localStorage so the list still renders offline.
+   */
+  favorites(): Promise<{ games: string[] }> {
+    return this.call(
+      async () => {
+        const r = await this.req<{ games: string[] }>('/favorites');
+        writeLocalFavorites(r.games);
+        return r;
+      },
+      () => ({ games: readLocalFavorites() }),
+    );
+  }
+
+  /** Star (`on = true`) or unstar a game. Needs a connection. */
+  async setFavorite(slug: string, on: boolean): Promise<{ games: string[] }> {
+    const r = await this.req<{ games: string[] }>(`/favorites/${encodeURIComponent(slug)}`, {
+      method: 'PUT', body: JSON.stringify({ on }),
+    });
+    writeLocalFavorites(r.games);
+    return r;
+  }
+
   // --- records ---
 
   /** This user's leaderboard standings, grouped by game (all games, or one via
@@ -1140,6 +1264,264 @@ const hubMenu: HubMenuControl = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// Social & multiplayer namespaces (multiplayer-impl.md §7.2).
+//
+// The live implementation is the runtime bundle /_hub/social.js, which the
+// injected menu loads and which installs `window.__HUB_RT__` (then fires the
+// window event 'hub:rt-ready'). These namespaces are deliberately thin so a
+// vendored copy of this file never goes stale:
+//
+//   - listeners (social.on, mp.onLaunch, mp.onJoinInfo) are kept here and
+//     attached whenever the runtime appears — they never expire;
+//   - "latest state" calls (presence.set/clear, mp.setBusy, notify.setQuiet)
+//     are remembered and replayed when the runtime appears;
+//   - UI openers (social.open*) wait up to RT_WAIT_MS, then are dropped
+//     silently (no-op);
+//   - calls that return data (social.friends, mp.invite/ticket/setJoinInfo,
+//     rooms.*) wait up to RT_WAIT_MS, then reject with OfflineError;
+//   - synchronous reads (social.counts/chatMode, mp.party) return neutral
+//     values (zeros / 'off' / null) until the runtime is up.
+//
+// With no `window.__HUB__` (a page the hub didn't inject: `hub:false`, local
+// dev) the runtime can never arrive, so waits end immediately.
+// ---------------------------------------------------------------------------
+
+/** How long data/UI calls wait for /_hub/social.js before giving up. */
+const RT_WAIT_MS = 15_000;
+
+interface RtWindow { __HUB_RT__?: RealtimeApi; __HUB__?: unknown }
+
+/** Resolves the runtime social API, waiting for it to load when necessary. */
+class RtBridge {
+  private readyCbs: Array<(rt: RealtimeApi) => void> = [];
+
+  constructor() {
+    if (typeof window === 'undefined') return;
+    window.addEventListener('hub:rt-ready', () => this.flush());
+  }
+
+  /** The runtime API if it has loaded. */
+  current(): RealtimeApi | null {
+    if (typeof window === 'undefined') return null;
+    return (window as unknown as RtWindow).__HUB_RT__ ?? null;
+  }
+
+  /** Run `cb` as soon as the runtime exists (now, or whenever it loads). */
+  onReady(cb: (rt: RealtimeApi) => void): void {
+    const rt = this.current();
+    if (rt) cb(rt); else this.readyCbs.push(cb);
+  }
+
+  /** The runtime, waiting up to RT_WAIT_MS; rejects with OfflineError. */
+  whenReady(): Promise<RealtimeApi> {
+    const rt = this.current();
+    if (rt) return Promise.resolve(rt);
+    if (typeof window === 'undefined' || !(window as unknown as RtWindow).__HUB__) {
+      return Promise.reject(new OfflineError('Online features are not available on this page.'));
+    }
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        const i = this.readyCbs.indexOf(done);
+        if (i >= 0) this.readyCbs.splice(i, 1);
+        reject(new OfflineError('Online features did not load.'));
+      }, RT_WAIT_MS);
+      const done = (r: RealtimeApi): void => { clearTimeout(timer); resolve(r); };
+      this.readyCbs.push(done);
+    });
+  }
+
+  /** Attach a listener now or on load; the returned function detaches it. */
+  subscribe(attach: (rt: RealtimeApi) => () => void): () => void {
+    let off: (() => void) | null = null;
+    let cancelled = false;
+    this.onReady((rt) => { if (!cancelled) off = attach(rt); });
+    return () => { cancelled = true; if (off) off(); };
+  }
+
+  /** Call the runtime (waiting for it) and re-wrap its errors as this file's classes. */
+  async call<T>(fn: (rt: RealtimeApi) => Promise<T>): Promise<T> {
+    const rt = await this.whenReady();
+    try { return await fn(rt); } catch (err) { throw toHubError(err); }
+  }
+
+  private flush(): void {
+    const rt = this.current();
+    if (!rt) return;
+    const cbs = this.readyCbs;
+    this.readyCbs = [];
+    cbs.forEach((cb) => { try { cb(rt); } catch (err) { console.error('[hub] social runtime callback failed', err); } });
+  }
+}
+
+/**
+ * Errors from the runtime bundle are a different class (it is a separate
+ * bundle), so re-create them as this file's HubError / ContentRejectedError /
+ * OfflineError to make `instanceof` work in games.
+ */
+function toHubError(err: unknown): HubError {
+  if (err instanceof HubError) return err;
+  if (!err || typeof err !== 'object') return new HubError(String(err));
+  const e = err as Record<string, unknown>;
+  const message = typeof e.message === 'string' ? e.message : 'Request failed';
+  const status = typeof e.status === 'number' ? e.status : undefined;
+  if (e.code === 'offline') return new OfflineError(message);
+  return errorFor(message, status, errorDetails(e));
+}
+
+/** `hub.presence` — what you're doing, shown to friends (privacy is automatic). */
+export interface HubPresenceApi {
+  /** Report an activity, e.g. `{kind:'playing', detail:'Level 3'}`. Coalesced; safe to call often. */
+  set(p: PresenceInput): void;
+  /** Back to "in the menu". */
+  clear(): void;
+}
+
+/** `hub.social` — friends and the hub's social dialogs. */
+export interface HubSocialApi {
+  /** Open a player card (add friend / message / invite / block / report). */
+  openPlayer(ref: PlayerRef): void;
+  /** Open the hub menu on the Friends section. */
+  openFriends(): void;
+  /** Open the chat with a friend. */
+  openChat(userId: number): void;
+  /** Open the invite picker (current game by default). */
+  openInvite(opts?: { userId?: number; mode?: string }): void;
+  /** Open the game-suggestion form + board. */
+  openSuggest(): void;
+  /** Open notification settings, optionally focused on a game's lobby bell. */
+  openNotify(opts?: { game?: string }): void;
+  /** Friends with live presence. Rejects with OfflineError without the runtime. */
+  friends(): Promise<FriendEntry[]>;
+  /** Live counts; all zero until the runtime is up. */
+  counts(): SocialCounts;
+  /** Effective chat mode (with these players); 'off' until the runtime is up. */
+  chatMode(userIds?: number[]): ChatMode;
+  /** Subscribe to social events; works before the runtime loads. */
+  on<E extends keyof SocialEvents>(ev: E, cb: (d: SocialEvents[E]) => void): () => void;
+}
+
+/** `hub.mp` — the multiplayer lifecycle (multiplayer.md §7). */
+export interface HubMpApi {
+  /** Invite/join/watch arrivals. Call at boot; launches that arrived earlier are buffered. */
+  onLaunch(cb: (l: Launch) => void): () => void;
+  /** The party leader published join info (e.g. a room code). */
+  onJoinInfo(cb: (e: JoinInfoEvent) => void): () => void;
+  /** Invite a friend to this game. Rejects with HubError/OfflineError. */
+  invite(userId: number, opts?: { mode?: string }): Promise<InviteResult>;
+  /**
+   * A live match is in progress: the hub confirms before navigating away and
+   * overlay events carry `canPause:false`.
+   */
+  setBusy(busy: boolean, opts?: { label?: string }): void;
+  /** A 60-second identity ticket for your own game server. */
+  ticket(): Promise<string>;
+  /** Host side, own-server games: tell the party where to connect. */
+  setJoinInfo(partyId: string, info: Record<string, string>): Promise<void>;
+  /** My current party, or null (also null until the runtime is up). */
+  party(): Party | null;
+}
+
+/** `hub.rooms` — hub relay rooms (static games, no server). */
+export interface HubRoomsApi {
+  create(opts?: RoomCreateOptions): Promise<HubRoom>;
+  join(codeOrId: string, opts?: { spectate?: boolean }): Promise<HubRoom>;
+  /** Public rooms in the lobby phase for this game. */
+  list(opts?: { mode?: string }): Promise<RoomInfo[]>;
+}
+
+/** `hub.notify` — toast behaviour. */
+export interface HubNotifyApi {
+  /** Quiet = toasts collapse into the menu badge; invites still show as a small pill. */
+  setQuiet(quiet: boolean): void;
+}
+
+/** Wraps a runtime room so its rejections use this file's error classes. */
+class RoomHandle implements HubRoom {
+  constructor(private readonly room: HubRoom) {}
+  get info(): RoomInfo { return this.room.info; }
+  get state(): Record<string, unknown> { return this.room.state; }
+  get me(): HubRoom['me'] { return this.room.me; }
+  on<E extends keyof RoomEvents>(ev: E, cb: (d: RoomEvents[E]) => void): () => void { return this.room.on(ev, cb); }
+  ready(ready: boolean): Promise<void> { return wrap(this.room.ready(ready)); }
+  seat(data: unknown): Promise<void> { return wrap(this.room.seat(data)); }
+  start(): Promise<void> { return wrap(this.room.start()); }
+  send(data: unknown, opts?: { to?: number }): Promise<void> { return wrap(this.room.send(data, opts)); }
+  setState(patch: Record<string, unknown>, opts?: { replace?: boolean }): Promise<void> { return wrap(this.room.setState(patch, opts)); }
+  chat(text: string): Promise<string> { return wrap(this.room.chat(text)); }
+  quick(phraseId: string): Promise<void> { return wrap(this.room.quick(phraseId)); }
+  kick(userId: number): Promise<void> { return wrap(this.room.kick(userId)); }
+  leave(): Promise<void> { return wrap(this.room.leave()); }
+  end(results?: unknown): Promise<void> { return wrap(this.room.end(results)); }
+}
+
+function wrap<T>(p: Promise<T>): Promise<T> {
+  return p.catch((err: unknown) => { throw toHubError(err); });
+}
+
+/** Build the page's social namespaces around one bridge. */
+function makeSocialNamespaces(bridge: RtBridge) {
+  // Latest-state calls replay on load: only the last value matters.
+  let presence: PresenceInput | null = null;
+  let busy: { busy: boolean; label?: string } | null = null;
+  let quiet: boolean | null = null;
+  bridge.onReady((rt) => {
+    if (presence) rt.presence.set(presence);
+    if (busy) rt.mp.setBusy(busy.busy, { label: busy.label });
+    if (quiet !== null) rt.notify.setQuiet(quiet);
+  });
+  const open = (fn: (rt: RealtimeApi) => void): void => {
+    bridge.whenReady().then(fn, () => { /* no runtime: openers are no-ops */ });
+  };
+
+  const presenceApi: HubPresenceApi = {
+    set(p) { presence = { ...p }; bridge.current()?.presence.set(presence); },
+    clear() { presence = { kind: 'menu' }; bridge.current()?.presence.clear(); },
+  };
+
+  const socialApi: HubSocialApi = {
+    openPlayer: (ref) => open((rt) => rt.social.openPlayer(ref)),
+    openFriends: () => open((rt) => rt.social.openFriends()),
+    openChat: (userId) => open((rt) => rt.social.openChat(userId)),
+    openInvite: (opts) => open((rt) => rt.social.openInvite(opts)),
+    openSuggest: () => open((rt) => rt.social.openSuggest()),
+    openNotify: (opts) => open((rt) => rt.social.openNotify(opts)),
+    friends: () => bridge.call((rt) => rt.social.friends()),
+    counts: () => bridge.current()?.social.counts() ?? { online: 0, inGame: 0, friendsOnline: 0 },
+    chatMode: (userIds) => bridge.current()?.social.chatMode(userIds) ?? 'off',
+    on: (ev, cb) => bridge.subscribe((rt) => rt.social.on(ev, cb)),
+  };
+
+  const mpApi: HubMpApi = {
+    onLaunch: (cb) => bridge.subscribe((rt) => rt.mp.onLaunch(cb)),
+    onJoinInfo: (cb) => bridge.subscribe((rt) => rt.mp.onJoinInfo(cb)),
+    invite: (userId, opts) => bridge.call((rt) => rt.mp.invite(userId, opts)),
+    setBusy(b, opts) {
+      busy = { busy: !!b, label: opts?.label };
+      // The overlay stack is local, so "can't pause" works even without the runtime.
+      getUiStack().setCanPause(!b);
+      bridge.current()?.mp.setBusy(busy.busy, { label: busy.label });
+    },
+    ticket: () => bridge.call((rt) => rt.mp.ticket()),
+    setJoinInfo: (partyId, info) => bridge.call((rt) => rt.mp.setJoinInfo(partyId, info)),
+    party: () => bridge.current()?.mp.party() ?? null,
+  };
+
+  const roomsApi: HubRoomsApi = {
+    create: (opts) => bridge.call(async (rt) => new RoomHandle(await rt.rooms.create(opts))),
+    join: (codeOrId, opts) => bridge.call(async (rt) => new RoomHandle(await rt.rooms.join(codeOrId, opts))),
+    list: (opts) => bridge.call((rt) => rt.rooms.list(opts)),
+  };
+
+  const notifyApi: HubNotifyApi = {
+    setQuiet(q) { quiet = !!q; bridge.current()?.notify.setQuiet(quiet); },
+  };
+
+  return { presence: presenceApi, social: socialApi, mp: mpApi, rooms: roomsApi, notify: notifyApi };
+}
+
+const social = makeSocialNamespaces(new RtBridge());
+
 /** A ready-to-use client with slug and API base auto-detected. */
 export const hub = new Hub();
 
@@ -1182,5 +1564,5 @@ export function getInput(): InputSystem {
 }
 
 if (typeof window !== 'undefined') {
-  (window as any).HubSDK = { hub, createHub, Hub, HubError, OfflineError };
+  (window as any).HubSDK = { hub, createHub, Hub, HubError, OfflineError, ContentRejectedError };
 }

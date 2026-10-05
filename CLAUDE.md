@@ -12,8 +12,11 @@ vendored. Your job: turn it into a real game.
 3. Read **`HANDOFF.md`** (how the catalog builds & mounts games — the path rules
    matter) and **`docs/hub.md`** (accounts, saves, stats, leaderboards,
    inventory, and the input system API).
-4. Build your game in `src/` (start by rewriting `src/main.ts`).
-5. `npm run build` → must produce `dist/` with relative asset paths.
+4. Read **`docs/multiplayer.md`** if your game is online (friends, invites,
+   rooms, chat). Every game, online or not, still needs its §4 (pause when the hub
+   opens).
+5. Build your game in `src/` (start by rewriting `src/main.ts`).
+6. `npm run build` → must produce `dist/` with relative asset paths.
 
 ## The rules (don't break these)
 
@@ -23,12 +26,24 @@ vendored. Your job: turn it into a real game.
 - **Edit the `game` block in `package.json`**: set `title`, `description`, and
   optionally `menuPosition`, `leaderboards`, `image` (a `cover.png` for the
   catalog tile), and `controls`. Keep `type: "static"`, `build: "npm run build"`,
-  `serveDir: "dist"`.
+  `serveDir: "dist"`, **unless `docs/multiplayer.md` tells you to use
+  `own-server`** (a real-time competitive game with its own server is a
+  `process` app; see HANDOFF.md).
 - **Output to `dist/`** via `npm run build` (Vite). Don't change that contract.
 - **Don't edit `src/hub/*`.** That's the vendored hub client
-  (`hub.ts` + `input.ts` + `overlay.ts` + `legacy.ts`), a snapshot of the host's
-  canonical client. Import from it; to update it, re-copy from the host repo's
-  `clients/`.
+  (`hub.ts`, `input.ts`, `overlay.ts`, `legacy.ts`, `daily.ts`, `uistack.ts` and
+  `social/rt-types.ts`), a snapshot of the host's canonical client. Import from it.
+  To update it, run `npm run sync-hub` (it copies from `../diffenderfer-games`).
+  The same sync also refreshes **`docs/hub.md`, `docs/multiplayer.md` and
+  `HANDOFF.md`**. Those are the host's canonical docs, so don't edit them here either.
+- **Pause when the hub opens: every game, single-player included.** Call
+  `hub.overlay.autoPause({ pause })` once at boot, so opening the hub menu, a chat
+  or an invite pauses the game the way your own pause does. Action games show
+  their pause screen on close rather than auto-resuming. See
+  `docs/multiplayer.md` §4.
+- **Online games follow `docs/multiplayer.md`.** Never build your own accounts,
+  friends, invites, chat or moderation, and never send player-typed text over your
+  own channel. The hub does all of that, kid-safe.
 - **Music and other continuous audio go in a background Web Worker.** Never
   synthesize music with live Web Audio node graphs scheduled from the main
   thread: on phones it breaks up whenever frames are heavy. The worker renders
@@ -52,6 +67,39 @@ vendored. Your job: turn it into a real game.
 - **Check on a phone.** Test with a production build over the LAN, and confirm
   there are no gaps while the game is under load.
 
+## Multiplayer (see docs/multiplayer.md)
+
+Every game already gets the hub's friends, presence, DMs and invites with no code.
+Read **`docs/multiplayer.md`** when players should play **together** in your game:
+
+- **Choose a transport** (§1):
+  - `hub-rooms` keeps the game static, with no server: the host player's browser
+    runs the rules and the hub relays.
+  - `own-server` is a process app with its own netcode; players are verified with
+    `hub.mp.ticket()` + `server/hub-server.mjs`.
+- **Declare `game.multiplayer`** in `package.json` (§2): `lobby`, `players`,
+  `transport`, `invites`/`join`/`spectate`, `modes`, `quickChat`, `chatAllow`.
+- **At boot** (§6): `hub.overlay.autoPause(...)` and `hub.mp.onLaunch(cb)` (within 8 s;
+  kinds `host`/`guest`/`join`/`watch`), plus `hub.mp.onJoinInfo(cb)`. The lobby URL
+  opens your lobby.
+- **During play:**
+  - `hub.presence.set({...})` at screen changes;
+  - `hub.mp.setBusy(true)` during a live match (leave guard, no pausing);
+  - `hub.notify.setQuiet(true)` during intense play.
+- **Lobby:** an **Invite** button (`hub.social.openInvite()`) and a 🔔
+  (`hub.social.openNotify({ game })`). Every player name opens
+  `hub.social.openPlayer({ userId })`.
+- **Chat** goes only through `room.chat` / `room.quick` (or your server's
+  `hub.chat()`):
+  - render only delivered text;
+  - keep the draft and show `err.hint` on a `ContentRejectedError`;
+  - quick-chat chips when `chatMode` is `quick`; hide chat when it's `off`.
+- **No violent words in UI copy** ("zap", not "shoot").
+- **Testing is required** (§12): a `tests/hub/` suite covering the 8 hub scenarios
+  (invite → jump → accept → lobby, decline/expire, leave guard, join/watch, pause
+  on hub open, chat reject/soften/quick-only/off, reconnect, suspended), using the
+  hub's test kit (`startHost` + `mpdemo`).
+
 ## Using the hub (all optional, all free — no backend to run)
 
 Import once: `import { hub } from './hub/hub';`
@@ -64,6 +112,10 @@ Import once: `import { hub } from './hub/hub';`
 - **Leaderboards**: declare in `package.json` `game.leaderboards`, submit with
   `hub.submitScore('high', score, { title: 'High Score' })`.
 - **Inventory/trades**: see docs/hub.md if your game has items/currency.
+- **Pause on hub UI**: `hub.overlay.autoPause({ pause: () => pauseGame() })`
+  (required, see the rules above).
+- **Friends, invites, rooms, chat**: see the Multiplayer section and
+  `docs/multiplayer.md`.
 - **Input** — the big one. Declare named inputs and read them uniformly on
   keyboard / mouse / touch / gamepad; the hub draws touch controls and handles
   gamepad + menu navigation. See `src/main.ts` for a full example and the
@@ -96,6 +148,11 @@ worker + manifest) automatically; nothing to add.
 - Progress saves via `hub.putSave` and (if competitive) a leaderboard is wired.
 - If the game has music, it's rendered in a background worker (docs/audio.md)
   and plays without gaps on a phone.
+- Opening the hub menu pauses the game (`hub.overlay.autoPause`); closing it shows
+  the pause screen (or resumes, for turn-based/idle games).
+- **Online games:** `game.multiplayer` is declared, every item of the
+  `docs/multiplayer.md` checklist is ticked, and the `tests/hub/` suite passes the
+  required hub test scenarios.
 
 To install into the catalog later: clone next to the host repo and symlink it
 into the host's `apps/<slug>/` (see HANDOFF.md / the host's DEPLOY.md).

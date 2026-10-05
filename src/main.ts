@@ -121,8 +121,19 @@ void (async () => {
   // -------------------------------------------------------------------------
   // Loop
   // -------------------------------------------------------------------------
+  // Pause whenever the hub's UI is open (menu, chat, an invite…) — required for
+  // every game (docs/multiplayer.md §4). This calm starter resumes on close; an
+  // action game should show its own pause screen instead (resumeOnClose: false).
+  let paused = false;
+  hub.overlay.autoPause({
+    pause: () => { paused = true; },
+    resume: () => { paused = false; },
+    resumeOnClose: true,
+  });
+
   const SPEED = 340;
   app.ticker.add((ticker) => {
+    if (paused) return;
     const dt = ticker.deltaMS / 1000;
     const move = hub.input.vector('move');           // { x, y, mag } — same on every device
     player.x = clamp(player.x + move.x * SPEED * dt, 16, app.screen.width - 16);
