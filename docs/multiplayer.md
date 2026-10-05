@@ -800,9 +800,14 @@ The effective **chat mode** is the strictest of these:
 - **Hub rooms:** use `room.info.chatMode` (authoritative, updated with every `room`
   event).
 - **Own server or elsewhere:** `hub.social.chatMode(otherUserIds)` is a client-side
-  estimate (`'off'` until the runtime loads). The server's `hub.chat()` result is final:
-  free text in a `quick` conversation is refused with `reason: 'quick_only'`.
-- Spectators never chat.
+  estimate (`'off'` until the runtime loads). It's conservative: `'on'` only for a
+  one-to-one conversation with a friend — a group of three or more starts at `'quick'`,
+  because a client can't see whether *other* players are friends with each other. The
+  server's `hub.chat()` result is final: free text in a quick-only room is refused with
+  `reason: 'not_friends'` (DMs use `'quick_only'`). Treat both as "switch this chat to
+  chips".
+- **Hub-room spectators** can't chat. An own-server game may let spectators chat, but
+  every line still goes through `hub.chat()` with the spectators included in `members`.
 
 ### Quick-chat phrases & emotes
 
