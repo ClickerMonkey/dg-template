@@ -371,8 +371,12 @@ with **nothing to add to your game**. Two layers cooperate:
 at `/`). It runtime-caches your HTML, JS, CSS, images, audio, fonts, and
 allow-listed CDNs (jsDelivr, Google Fonts, unpkg, cdnjs) as they load, so after
 one online visit the game **loads and plays with no connection**. Strategy:
-network-first for navigations (falls back to the cached shell), stale-while-
-revalidate for same-origin assets, cache-first for CDNs. `/_api/*` is never
+network-first for navigations (falls back to the cached shell) and for
+same-origin assets (3 s timeout, then the cached copy; the host answers with
+cheap ETag/304 revalidations), cache-first for CDNs. Players stuck on an old
+version (e.g. an installed home-screen app with no reload) can use the menu's
+**Update & reload** button: it unregisters the service workers, clears Cache
+Storage and reloads from the network, keeping saves and settings. `/_api/*` is never
 cached — offline data is the SDK's job (above).
 
 **2. Install ("add to home screen").** A per-game web manifest, icons (your
