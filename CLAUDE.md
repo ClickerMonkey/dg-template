@@ -29,6 +29,28 @@ vendored. Your job: turn it into a real game.
   (`hub.ts` + `input.ts` + `overlay.ts` + `legacy.ts`), a snapshot of the host's
   canonical client. Import from it; to update it, re-copy from the host repo's
   `clients/`.
+- **Music and other continuous audio go in a background Web Worker.** Never
+  synthesize music with live Web Audio node graphs scheduled from the main
+  thread: on phones it breaks up whenever frames are heavy. The worker renders
+  PCM chunks, and the main thread only queues them as `AudioBufferSourceNode`s
+  ~2–3 s ahead. Short one-shot SFX may stay on the main thread. See
+  **`docs/audio.md`** for the pattern and a drop-in skeleton.
+
+## Audio (see docs/audio.md)
+
+- **Background music / long loops:** compose and synthesize in a **Web Worker**
+  (`new Worker(new URL('./audio/musicWorker.ts', import.meta.url), { type: 'module' })`).
+  Stream back fixed-size chunks (transfer the `Float32Array`s, don't copy them), and
+  schedule them back-to-back on sample boundaries.
+- **Not AudioWorklet.** It needs a secure context, so it fails on `http://` LAN
+  test URLs. Workers work everywhere.
+- **Keep instant controls on the main thread:** volume, pause/duck and layers
+  that must react immediately (render those as a separate stem with its own
+  `GainNode`).
+- **Unlock and resume** the `AudioContext` on every user gesture, and suspend it
+  while the page is hidden.
+- **Check on a phone.** Test with a production build over the LAN, and confirm
+  there are no gaps while the game is under load.
 
 ## Using the hub (all optional, all free — no backend to run)
 
@@ -72,6 +94,8 @@ worker + manifest) automatically; nothing to add.
 - `package.json` `game.title`/`description` describe your game; a `cover.png` +
   `game.image` is a nice touch.
 - Progress saves via `hub.putSave` and (if competitive) a leaderboard is wired.
+- If the game has music, it's rendered in a background worker (docs/audio.md)
+  and plays without gaps on a phone.
 
 To install into the catalog later: clone next to the host repo and symlink it
 into the host's `apps/<slug>/` (see HANDOFF.md / the host's DEPLOY.md).
