@@ -1139,8 +1139,8 @@ fields go through the filter and answer **422** `content_rejected` on refusal.
 - `POST /social/reports` `{kind:'message'|'user'|'username'|'suggestion'|'room_chat'|'presence', targetUserId, refId?, reason:'mean'|'bad_words'|'personal'|'inappropriate'|'spam'|'other'}` → `{ok, id}` (the server snapshots the content itself; 3 independent claimed reporters in 24 h → auto-mute + admin flag)
 
 ### Notifications (`handlers/notify.js`)
-- `GET  /social/notify` → `{dm, friend_request, friendOnline:[userId], lobbyOpen:[slug]}`
-- `PUT  /social/notify` `{kind:'dm'|'friend_request'|'friend_online'|'lobby_open', target?, enabled}` → the same shape
+- `GET  /social/notify` → `{dm, friend_request, friendOnlineAll, friendOnline:[userId], lobbyOpen:[slug]}`
+- `PUT  /social/notify` `{kind:'dm'|'friend_request'|'friend_online'|'lobby_open', target?, enabled}` → the same shape (`friend_online` with no `target` is the "any friend" switch)
 - `POST /social/push` `{subscription}` → `{ok}` · `DELETE /social/push` `{endpoint}` → `{ok}` (Web Push; ≤5 per user)
 
 ### Suggestions

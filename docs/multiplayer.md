@@ -234,13 +234,17 @@ hub.overlay.canPause;    // false during setBusy(true)
 
 ## 5. Notifications & `lobby_open`
 
-Players opt in (everything is off by default) from **Notifications** in the hub menu:
+Players opt in (everything is off by default) from **Notifications** in the hub menu,
+or with one tap on the **"🔔 Get a buzz…"** card in the Friends section (it turns on
+messages, requests and any-friend-online for that device). Alerts buzz the phone
+when the site is in the background or closed; tapping one focuses the open app and
+opens the chat / player card in place (or opens the site if nothing is running).
 
 | Kind | What | Your part |
 |---|---|---|
 | `dm` | a friend's message (push only when no tab is visible) | nothing |
 | `friend_request` | a new friend request | nothing |
-| `friend_online` | a chosen friend comes online | nothing |
+| `friend_online` | any friend, or a chosen friend, comes online | nothing |
 | `lobby_open` | **someone is waiting in a public lobby of a game I follow** | report lobby presence (below) + a 🔔 button |
 
 **Put a 🔔 in your lobby** that opens the hub's settings focused on your game:

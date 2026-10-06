@@ -130,6 +130,8 @@ export interface SocialConfig {
 export interface NotifyPrefs {
   dm: boolean;
   friend_request: boolean;
+  /** "Tell me when any friend comes online" (on top of the per-friend bells). */
+  friendOnlineAll: boolean;
   /** Friend ids with "tell me when they're online" on. */
   friendOnline: number[];
   /** Game slugs with "someone's waiting in a lobby" on. */
