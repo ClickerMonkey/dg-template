@@ -19,10 +19,17 @@
 #   DEPLOY_SSH_KEY      private deploy key                 (required to enable)
 #   DEPLOY_HOST         host or droplet IP  (optional, default: diffenderfer.games)
 #   DEPLOY_USER         ssh user            (optional, default: root)
-#   DEPLOY_PATH         dir on the server   (optional, default: this repo's name)
+#   DEPLOY_PATH         dir on the server, under /root (optional, default: this repo's name)
 #   DEPLOY_KNOWN_HOSTS  the host's known_hosts line(s)   (optional, self-hosted
 #                       deploy: else the host key is accepted on first use and
 #                       remembered for that run only)
+# Repo variable (optional): DEPLOY_SLUG, the catalog slug (default: the repo
+# name, lowercased) — the name of the link in the host's apps/ folder.
+#
+# First deploy: when the server has no clone yet, the remote script clones the
+# repo (the droplet's gh login authenticates private org repos), installs it,
+# and links it into /root/diffenderfer-games/apps/<slug>, so a new game goes
+# live on its first push. Later deploys pull, install and restart as before.
 # See the host repo's ACTIONS.md for full setup.
 name: Deploy
 
@@ -69,11 +76,27 @@ jobs:
           script_stop: true
           script: |
             set -euo pipefail
-            cd "/root/${{ secrets.DEPLOY_PATH || github.event.repository.name }}"
+            REPO="${{ github.repository }}"
+            DIR="/root/${{ secrets.DEPLOY_PATH || github.event.repository.name }}"
+            SLUG="${{ vars.DEPLOY_SLUG || github.event.repository.name }}"
+            APPS=/root/diffenderfer-games/apps
+            if [ ! -d "$DIR/.git" ]; then
+              echo "first deploy: cloning $REPO into $DIR"
+              git clone "https://github.com/$REPO.git" "$DIR"
+            fi
+            cd "$DIR"
             git fetch --all --prune
             git reset --hard "origin/$(git symbolic-ref --short HEAD)"
             npm install --no-audit --no-fund
             rm -f .diffenderfer-build-cache
+            SLUG="$(printf '%s' "$SLUG" | tr '[:upper:]' '[:lower:]')"
+            if ! printf '%s' "$SLUG" | grep -Eq '^[a-z0-9][a-z0-9-]*$'; then echo "bad slug: $SLUG" >&2; exit 1; fi
+            if [ -L "$APPS/$SLUG" ] || [ -e "$APPS/$SLUG" ]; then
+              [ "$(readlink -f "$APPS/$SLUG")" = "$(readlink -f "$DIR")" ] || echo "::warning::$APPS/$SLUG exists but isn't this repo; left as is"
+            else
+              ln -s "$DIR" "$APPS/$SLUG"
+              echo "linked $APPS/$SLUG -> $DIR"
+            fi
             systemctl restart diffenderfer-games
             echo "deployed $(git rev-parse --short HEAD)"
 
@@ -108,6 +131,8 @@ jobs:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
           DEPLOY_DIR: /root/${{ secrets.DEPLOY_PATH || github.event.repository.name }}
+          DEPLOY_REPO: ${{ github.repository }}
+          DEPLOY_SLUG: ${{ vars.DEPLOY_SLUG || github.event.repository.name }}
         run: |
           $ErrorActionPreference = 'Stop'
           # the key, this user's only (OpenSSH refuses a key others can read; full control, so it can be deleted)
@@ -127,15 +152,31 @@ jobs:
           # the remote script (the same as the GitHub-hosted deploy's), sent base64-encoded: no quoting / CRLF trouble
           $script = @'
           set -euo pipefail
-          cd "__DEPLOY_DIR__"
+          REPO="__REPO__"
+          DIR="__DEPLOY_DIR__"
+          SLUG="__SLUG__"
+          APPS=/root/diffenderfer-games/apps
+          if [ ! -d "$DIR/.git" ]; then
+            echo "first deploy: cloning $REPO into $DIR"
+            git clone "https://github.com/$REPO.git" "$DIR"
+          fi
+          cd "$DIR"
           git fetch --all --prune
           git reset --hard "origin/$(git symbolic-ref --short HEAD)"
           npm install --no-audit --no-fund
           rm -f .diffenderfer-build-cache
+          SLUG="$(printf '%s' "$SLUG" | tr '[:upper:]' '[:lower:]')"
+          if ! printf '%s' "$SLUG" | grep -Eq '^[a-z0-9][a-z0-9-]*$'; then echo "bad slug: $SLUG" >&2; exit 1; fi
+          if [ -L "$APPS/$SLUG" ] || [ -e "$APPS/$SLUG" ]; then
+            [ "$(readlink -f "$APPS/$SLUG")" = "$(readlink -f "$DIR")" ] || echo "::warning::$APPS/$SLUG exists but isn't this repo; left as is"
+          else
+            ln -s "$DIR" "$APPS/$SLUG"
+            echo "linked $APPS/$SLUG -> $DIR"
+          fi
           systemctl restart diffenderfer-games
           echo "deployed $(git rev-parse --short HEAD)"
           '@
-          $script = ($script -replace "`r", '').Replace('__DEPLOY_DIR__', $env:DEPLOY_DIR) + "`n"
+          $script = ($script -replace "`r", '').Replace('__DEPLOY_DIR__', $env:DEPLOY_DIR).Replace('__REPO__', $env:DEPLOY_REPO).Replace('__SLUG__', $env:DEPLOY_SLUG) + "`n"
           $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($script))
           $ssh = Join-Path $env:WINDIR 'System32\OpenSSH\ssh.exe'
           if (-not (Test-Path $ssh)) { $ssh = (Get-Command ssh.exe).Source }

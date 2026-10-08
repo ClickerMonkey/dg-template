@@ -31,12 +31,17 @@ To start a new game:
    register. The variable `CI_ON` switches where the deploy runs: `self` (default,
    also when unset; no Actions minutes) or `github` (GitHub-hosted, costs minutes —
    for when the machine is off).
-4. **Link it on the host** (diffenderfer.games): clone it on the droplet and symlink
-   it into the host's `apps/<slug>/` — the host's
+4. **Push to `main`/`master`: the first deploy puts it on the host.** When the
+   droplet has no clone yet, the deploy clones the repo into `/root/<repo>`
+   (the droplet's `gh` login reads private org repos), runs `npm install`,
+   links it as `/root/diffenderfer-games/apps/<slug>` (slug = the repo name,
+   lowercased; set the repo variable `DEPLOY_SLUG` to override) and restarts the
+   catalog. Later pushes just pull, install and restart. Check
+   https://diffenderfer.games/<slug>/. (The manual way still works: the host's
    [RUNNERS.md](https://github.com/diffenderfer-games/diffenderfer-games/blob/master/RUNNERS.md)
    "New game checklist" and
    [DEPLOY.md](https://github.com/diffenderfer-games/diffenderfer-games/blob/master/DEPLOY.md)
-   § 12 "Adding a new game". Until then its deploy has nowhere to pull.
+   § 12 "Adding a new game".)
 
 **This template repo itself is public** (so it can be used as a template and read
 freely). Public repos never get the org's self-hosted runner, and it has no deploy secrets: its
