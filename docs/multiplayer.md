@@ -1307,7 +1307,11 @@ your top/bottom UI can move out of its way:
 - CSS variables on `<html>`: `--hub-race-hud-top` / `--hub-race-hud-bottom`, the px
   the HUD covers from that edge (`0px` when there is none), e.g.
   `.topbar { top: calc(8px + var(--hub-race-hud-top, 0px)); }`;
-- a window event `hub:race-hud` with `{ visible, place, top, bottom }` whenever it changes.
+- `--hub-race-hud-left` / `--hub-race-hud-right`: its horizontal span (px from each
+  side of the screen to the HUD), so a corner HUD only moves when it actually
+  sits under the race HUD (e.g. a left-corner block narrower than
+  `--hub-race-hud-left` can stay put);
+- a window event `hub:race-hud` with `{ visible, place, top, bottom, left, right }` whenever it changes.
 
 There is no separate Give up to build: the HUD has it. Stats with `format: 'color'`
 show as a colour swatch in the HUD and on the result card.
