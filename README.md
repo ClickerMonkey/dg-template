@@ -63,3 +63,11 @@ Never hand-edit these copies.
 Clone this beside the [diffenderfer-games](https://github.com/clickermonkey/diffenderfer-games)
 host repo and symlink it into `apps/<slug>/` (see the host's `DEPLOY.md`). The
 catalog discovers it, runs `npm run build`, and serves `dist/` under `/<slug>/`.
+
+Deploys: `.github/workflows/deploy.yml` deploys on every push to `main`/`master`
+once the `DEPLOY_SSH_KEY` secret is set — by default from the owner's
+self-hosted Windows runner (no Actions minutes). A new game repo needs its own
+runner: on that machine run the host's `scripts/register-runners.ps1 -Repos
+<new-repo>` (see the host's `RUNNERS.md`). The repo variable `CI_ON=github`
+switches to the GitHub-hosted deploy instead (this template repo, being public,
+uses that).
