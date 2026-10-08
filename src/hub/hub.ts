@@ -37,6 +37,8 @@ export * from './uistack';
 import type {
   ChatMode, FriendEntry, HubRoom, InviteResult, JoinInfoEvent, Launch, Party, PlayerRef,
   PresenceInput, RealtimeApi, RoomCreateOptions, RoomEvents, RoomInfo, SocialCounts, SocialEvents,
+  RaceCreateOptions, RaceDefinition, RaceEvents, RaceHistory, RaceHistoryQuery, RaceParams, RaceResult,
+  RaceRuntimeApi, RaceStats,
 } from './social/rt-types';
 export type * from './social/rt-types';
 
@@ -640,6 +642,9 @@ export class Hub {
 
   /** Toast behaviour during intense play. See {@link HubNotifyApi}. */
   get notify(): HubNotifyApi { return social.notify; }
+
+  /** Races: single-player games become multiplayer by racing. See {@link HubRaceApi}. */
+  get race(): HubRaceApi { return social.race; }
 
   private _daily: DailySystem | null = null;
   /** Daily challenges. A game calls `hub.daily.define({ play })` once at load;
@@ -1436,6 +1441,46 @@ export interface HubNotifyApi {
   setQuiet(quiet: boolean): void;
 }
 
+/**
+ * `hub.race` — races (docs/multiplayer.md "Races"). Declare `game.race` in
+ * package.json, call `define` at boot, put a Race button on your menu that
+ * calls `create({params})` (or `browse()`), and report `status` / `finish` /
+ * `lose`. The hub does the matching, the waiting card, invites, the
+ * countdown, the live HUD, the referee, the result card and the history.
+ */
+export interface HubRaceApi {
+  /** Register how the hub starts/ends your race. Call once at boot (works before the runtime loads). */
+  define(def: RaceDefinition): void;
+  /** Create a race with these params; the hub shows the waiting card. Rejects with HubError/OfflineError. */
+  create(opts?: RaceCreateOptions): Promise<RoomInfo>;
+  /** Join a race by code (or watch: `{ spectate: true }`). */
+  join(code: string, opts?: { spectate?: boolean }): Promise<RoomInfo>;
+  /** Public races in this game waiting for a racer. */
+  list(): Promise<RoomInfo[]>;
+  /** Open the hub's "Open races" sheet (join one, or type a code). */
+  browse(): void;
+  /** Open the hub's race history (this game by default). */
+  openHistory(opts?: { game?: string | null; with?: number }): void;
+  /** The signed-in player's races. */
+  history(q?: RaceHistoryQuery): Promise<RaceHistory>;
+  /** Live stats for the HUD (+ optional 0..1 progress). Throttled and coalesced: call it on every change. */
+  status(stats: RaceStats, progress?: number): void;
+  /** I finished: resolves with the result if I won, null if someone was first. */
+  finish(stats?: RaceStats): Promise<RaceResult | null>;
+  /** I'm out (game over / no lives): the others race on, the last one in wins. */
+  lose(stats?: RaceStats): Promise<void>;
+  /** Give up. */
+  forfeit(): Promise<void>;
+  /** Leave the race (a forfeit if it's running). */
+  leave(): Promise<void>;
+  /** Ask for another round after a race. */
+  rematch(params?: RaceParams): Promise<void>;
+  /** The race this page is in (RoomInfo with `.race`), or null. */
+  current(): RoomInfo | null;
+  /** Subscribe to race events; works before the runtime loads. */
+  on<E extends keyof RaceEvents>(ev: E, cb: (d: RaceEvents[E]) => void): () => void;
+}
+
 /** Wraps a runtime room so its rejections use this file's error classes. */
 class RoomHandle implements HubRoom {
   constructor(private readonly room: HubRoom) {}
@@ -1609,7 +1654,33 @@ function makeSocialNamespaces(bridge: RtBridge) {
     setQuiet(q) { quiet = !!q; bridge.current()?.notify.setQuiet(quiet); },
   };
 
-  return { presence: presenceApi, social: socialApi, mp: mpApi, rooms: roomsApi, notify: notifyApi };
+  // Races live in the runtime too; an old cached runtime (RT_VERSION 1) has
+  // none, which reads as "not available" rather than a crash.
+  let raceDef: RaceDefinition | null = null;
+  bridge.onReady((rt) => { if (raceDef) rt.race?.define(raceDef); });
+  const needRace = (rt: RealtimeApi): RaceRuntimeApi => {
+    if (!rt.race) throw new OfflineError('Races need the latest hub — reload the page.');
+    return rt.race;
+  };
+  const raceApi: HubRaceApi = {
+    define(def) { raceDef = def; bridge.current()?.race?.define(def); },
+    create: (opts) => bridge.call((rt) => needRace(rt).create(opts)),
+    join: (code, opts) => bridge.call((rt) => needRace(rt).join(code, opts)),
+    list: () => bridge.call((rt) => needRace(rt).list()),
+    browse: () => open((rt) => rt.race?.browse()),
+    openHistory: (opts) => open((rt) => rt.race?.openHistory(opts)),
+    history: (q) => bridge.call((rt) => needRace(rt).history(q)),
+    status: (stats, progress) => { bridge.current()?.race?.status(stats, progress); },
+    finish: (stats) => bridge.call((rt) => needRace(rt).finish(stats)),
+    lose: (stats) => bridge.call((rt) => needRace(rt).lose(stats)),
+    forfeit: () => bridge.call((rt) => needRace(rt).forfeit()),
+    leave: () => bridge.call((rt) => needRace(rt).leave()),
+    rematch: (params) => bridge.call((rt) => needRace(rt).rematch(params)),
+    current: () => bridge.current()?.race?.current() ?? null,
+    on: (ev, cb) => bridge.subscribe((rt) => (rt.race ? rt.race.on(ev, cb) : () => {})),
+  };
+
+  return { presence: presenceApi, social: socialApi, mp: mpApi, rooms: roomsApi, notify: notifyApi, race: raceApi };
 }
 
 const social = makeSocialNamespaces(new RtBridge());

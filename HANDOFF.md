@@ -69,6 +69,7 @@ app sees requests as if mounted at root — **but** the browser still sees
 | `controls`    | no       | Gamepad→key map for controller/arcade play (see the hub)    |
 | `multiplayer` | no       | Makes the game an online invite/join target — see `docs/multiplayer.md` |
 | `changes`     | no       | Player-facing "What's new" notes, one per change (see below) — **keep it updated** |
+| `race`        | no       | Single-player game → multiplayer by racing (same seed, first to finish wins) — see `docs/multiplayer.md` §14 |
 
 ### Process (build then run a long-lived server the catalog proxies to)
 
@@ -103,6 +104,7 @@ app sees requests as if mounted at root — **but** the browser still sees
 | `controls`    | no       | Gamepad→key map for controller/arcade play (see the hub)    |
 | `multiplayer` | no       | Makes the game an online invite/join target — see `docs/multiplayer.md` |
 | `changes`     | no       | Player-facing "What's new" notes, one per change (see below) — **keep it updated** |
+| `race`        | no       | Single-player game → multiplayer by racing (same seed, first to finish wins) — see `docs/multiplayer.md` §14 |
 
 > **Ports:** the host assigns each process app a free port (via `PORT`/
 > `GAME_PORT` and the `{{PORT}}` placeholder) and **probes that it's actually

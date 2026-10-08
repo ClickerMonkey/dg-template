@@ -64,7 +64,7 @@ src/
 scripts/sync-hub.mjs  re-copies src/hub/* + the docs below from ../diffenderfer-games
 HANDOFF.md            how the catalog builds & mounts a game (read this; synced from the host)
 docs/hub.md           full hub API: accounts, saves, leaderboards, input, … (synced from the host)
-docs/multiplayer.md   friends, presence, invites, rooms, chat (read if online; synced from the host)
+docs/multiplayer.md   friends, presence, invites, rooms, chat, races (§14) (read if online or racing; synced from the host)
 docs/audio.md         music/continuous audio in a background Web Worker (required pattern)
 CLAUDE.md             brief for an AI assistant building the game
 ```

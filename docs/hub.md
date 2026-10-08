@@ -251,6 +251,7 @@ promise.
 | `hub.favorites()` / `hub.setFavorite(slug, on)` | Starred games (`{ games: string[] }`) — see [Favorites](#favorites). |
 | `hub.overlay.autoPause({ pause, resume?, resumeOnClose? })` / `.on('open'\|'close', cb)` / `.isOpen` | Pause when hub UI covers the game (sync) — see [Pausing](#pausing-when-hub-ui-opens-huboverlay). |
 | `hub.presence` · `hub.social` · `hub.mp` · `hub.rooms` · `hub.notify` | Presence, friends/player cards, invites + launches + tickets, relay rooms, quiet mode — see [Social & multiplayer](#social--multiplayer) and `docs/multiplayer.md`. |
+| `hub.race` | Races: a single-player game becomes multiplayer — same seed for everyone, the hub's waiting card / HUD / referee / result / history; the game reports `status` and `finish`/`lose`. See `docs/multiplayer.md` §14. |
 
 **Offline-first (this is automatic — no config):** the SDK keeps a local mirror
 of your game's state in `localStorage`, warmed by every successful read. When
@@ -881,8 +882,9 @@ otherwise). The menu draws the star buttons, so most games never call these.
 
 ## What's new (`game.changes`)
 
-Players see what changed since they last looked: a **What's new** panel on the
-home page (grouped by game, with a **Mark all as seen** button) and, in every
+Players see what changed since they last looked: a compact **What's new**
+button on the home page with a count (it opens the notes, grouped by game, in a
+modal with a **Mark all as seen** button) and, in every
 game's menu, a compact **What's new** card with a count (it opens the list).
 The menu button gets a small cyan dot while anything is unseen. Nothing to wire
 up in code: you only keep a list in `package.json`.
@@ -978,6 +980,10 @@ repo.
     a room handle with `ready/seat/start/send/setState/chat/quick/kick/leave/end`
     and `on('room'|'msg'|'state'|'chat'|'kicked'|'closed'|'abandoned', cb)`
   - `hub.notify.setQuiet(quiet)`
+  - `hub.race.define({start, end?, exit?, hud?})`, `create({params, public?})`, `join(code)`,
+    `list()`, `browse()`, `openHistory()`, `history()`, `status(stats, progress?)`,
+    `finish(stats?)`, `lose(stats?)`, `forfeit()`, `leave()`, `rematch()`, `current()`, `on(ev, cb)`
+    — races, opted in with `game.race` (`docs/multiplayer.md` §14)
 - **Opting a game in** is the `game.multiplayer` block in `package.json`
   (`lobby`, `players`, `transport: "hub-rooms" | "own-server"`, `invites`, `join`,
   `spectate`, `modes`, `quickChat`, `chatAllow`). The catalog shows an **Online**

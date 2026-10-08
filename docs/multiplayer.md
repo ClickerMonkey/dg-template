@@ -32,6 +32,8 @@ does all of that. Your game only:
 - **Register `hub.mp.onLaunch` at boot** (within 8 s) if your game has `game.multiplayer`.
 - **Call `hub.mp.setBusy(true)` during a live online match**, and `false` after it.
 - **Online games ship with the required hub test scenarios** ([Testing](#12-testing-required)).
+- **Single-player games can race** with no netcode: declare `game.race`, put a Race button on the menu,
+  and build the puzzle from the shared seed ([Races](#14-races-single-player-games-go-multiplayer)).
 
 Import from the vendored client (TypeScript games) or from the hub (plain JS):
 
@@ -62,6 +64,7 @@ loaded, and when it never loads (offline, `hub: false`, local `vite dev`). See
 11. [Showing other players · notification etiquette](#11-showing-other-players--notification-etiquette)
 12. [Testing (required)](#12-testing-required)
 13. [Definition of done](#13-definition-of-done)
+14. [Races (single-player games go multiplayer)](#14-races-single-player-games-go-multiplayer)
 
 ---
 
@@ -1128,7 +1131,8 @@ test('a suspended player cannot use online play', async () => {
 | `presence.set/clear`, `mp.setBusy`, `notify.setQuiet` | Remembered and replayed when the runtime appears. |
 | `social.on`, `mp.onLaunch`, `mp.onJoinInfo` | Kept and attached whenever the runtime appears. They never expire. |
 | `social.open*` | Wait up to 15 s, then do nothing. |
-| `social.friends`, `mp.invite/ticket/setJoinInfo`, `rooms.*` | Wait up to 15 s, then reject with `OfflineError` (immediately when the page isn't hub-injected). |
+| `social.friends`, `mp.invite/ticket/setJoinInfo`, `rooms.*`, `race.create/join/list/finish/…` | Wait up to 15 s, then reject with `OfflineError` (immediately when the page isn't hub-injected). |
+| `race.define`, `race.on` | Kept and attached whenever the runtime appears. `race.status` is dropped until then (there's no race without it). |
 | `social.counts()` / `chatMode()` / `mp.party()` | Zeros / `'off'` / `null`. |
 
 Guard every online entry point with a friendly "Online play needs a connection" when
@@ -1167,3 +1171,143 @@ Online games, additionally:
 - [ ] Own-server: tickets verified on the server (fresh ticket per connect); results via
       `hub.results()`; competitive boards are `"source": "server"`.
 - [ ] `tests/hub/` covers the 8 required scenarios and passes against `startHost`.
+
+---
+
+## 14. Races (single-player games go multiplayer)
+
+**Rule:** a single-player game (a puzzle, a level, a run) becomes multiplayer by
+**racing**: everyone gets the **same** puzzle from a shared seed, the hub shows a
+live race HUD, and **the first to finish wins**. Losing (game over, out of lives)
+or giving up loses. You write no lobby, no netcode and no results screen.
+
+| The hub does | Your game does |
+|---|---|
+| Open races list, join by code, invites, Join/Watch from presence, `lobby_open` | a **Race** button on the main menu + a param picker (difficulty, size…) |
+| The waiting card (who's in, the 5-char code, Invite, Cancel) | `hub.race.create({ params })` |
+| A fresh seed, revealed at the countdown; the 3-2-1-Go | build the puzzle from `seed` + `params` in `start()` |
+| The live HUD (names → player cards, progress bars, your declared stats), Give up | `hub.race.status(stats, progress)` on every change |
+| The referee (first valid finish wins; lose/forfeit/leave/drop = out) | `hub.race.finish(stats)` / `hub.race.lose(stats)` |
+| The result card (Rematch, Done), the race history (drawer, player cards) | `exit()`: go back to your menu |
+
+The full design, the wire contract and the trust limits are in the hub's
+`docs/plans/race.md`. The reference game is the hub's `apps-test/racedemo`; the
+first real one is The 15 Puzzle (`client/src/routes/Race.tsx`).
+
+### 14.1 Declare `game.race`
+
+```jsonc
+"game": {
+  "race": {
+    "players": [2, 2],                    // [min, max] racers, within 2..8 (default [2, 2])
+    "params": [                           // what the creator picks; the server only accepts these values
+      { "key": "size", "title": "Board", "default": 4,
+        "options": [{ "value": 3, "title": "3x3" }, { "value": 4, "title": "4x4" }] }
+    ],
+    "stats": [                            // what the HUD + history show (≤8; the HUD shows the first 3)
+      { "key": "moves", "title": "Moves" },               // format: int (default) | percent | time | bool | color
+      { "key": "pct", "title": "Done", "format": "percent" }
+    ],
+    "minMs": 3000,                        // a finish sooner than this after the go is held until it has passed
+    "lobby": "?race=lobby"                // where race invites / Join land (default)
+  }
+}
+```
+
+- `race: true` is shorthand for all defaults (no params, no stats).
+- A game with `race` but no `multiplayer` gets a race-only multiplayer block
+  automatically (invites, Join, Watch). A game with both gets a `race` mode added
+  to its modes; race invites and launches carry `mode: 'race'`.
+- Titles are your text, shown to other players, so they're checked like
+  quick-chat phrases (plain ASCII such as `3x3`, no violent words). A failing
+  title falls back to its key (see the host log).
+- Option values are numbers, booleans or short tokens (`[A-Za-z0-9_-]{1,24}`).
+
+### 14.2 The game-facing API
+
+```ts
+hub.race.define({                          // at boot, once (works before the runtime loads)
+  start(r) {                               // the countdown began (and again on rematch / after a reload)
+    // r: { seed, params, startAt, round, players, roomId, resumed, spectator }
+    newPuzzle(seededRng(r.seed), r.params); // SAME seed + params → SAME puzzle for everyone
+    lockInputUntil(r.startAt);             // r.startAt is on this page's clock; the hub draws the 3-2-1
+  },
+  end(result) { stopInput(); },            // decided; the hub shows the result card
+  exit() { showMainMenu(); },              // the player pressed Done / Cancel, or the race closed
+  hud: { place: 'top' },                   // 'top' | 'bottom' | 'top-left' | … , or false to draw your own
+});
+
+startBtn.onclick = () => hub.race.create({ params: { size: 4 }, public: true });  // the hub shows the waiting card
+joinBtn.onclick = () => hub.race.browse(); // the hub's "Open races" sheet (or render hub.race.list() yourself)
+historyBtn.onclick = () => hub.race.openHistory();
+
+hub.race.status({ moves, pct }, pct);      // on every change: throttled + coalesced by the hub (≤4/s)
+await hub.race.finish({ moves, pct: 1 });  // → RaceResult if you won, null if someone beat you
+await hub.race.lose({ moves });            // game over: you're out (the last racer still in wins)
+await hub.race.forfeit();                  // give up (the HUD has a Give up button too)
+hub.race.current();                        // RoomInfo (with .race) or null
+hub.race.on('status' | 'start' | 'result' | 'room' | 'closed', cb);
+await hub.race.history({ game, with });    // the signed-in player's races
+```
+
+- **Stats are numbers, booleans or `#rrggbb` colours, never text** (≤12 keys,
+  identifier keys). Text would be a channel between strangers, so the server
+  refuses it (`bad_stats`). The hub only renders stats you declared.
+- **`progress`** (0..1) drives the HUD bars and places racers who didn't finish.
+  Report it if you can (tiles home ÷ total, % of the level).
+- **Race launches are the hub's.** An accepted race invite or a friend's Join
+  lands on your `race.lobby` URL and the hub joins the race itself, so you don't
+  need `hub.mp.onLaunch` for races (your non-race launches still arrive there).
+  When your router redirects the lobby URL, **keep its query** (it carries
+  `hub_launch` until the hub reads it).
+- **Busy and quiet are automatic** while racing (the leave guard says "a race",
+  toasts collapse). Don't pause the race when the hub menu opens: it can't wait.
+- **Reloads:** the hub re-joins the race seat after a reload and calls `start()`
+  again with `resumed: true` and the same seed. Restart the board, or restore the
+  player's progress from your own `sessionStorage`.
+- **Spectators** (friends who tap Watch) see the HUD; `start` isn't called for them.
+- Guests can race (Open races, codes); invites need a claimed account.
+  Suspended players can't race.
+
+### 14.3 Fairness: same seed, same puzzle
+
+Everything random about the puzzle must come from `r.seed` + `r.params`:
+
+- Use a small seeded PRNG (e.g. mulberry32) for generation and **never**
+  `Math.random()` in anything that changes the puzzle. Cosmetics may stay random.
+- If the game already has a daily-challenge seed path, reuse it with the race seed.
+- **Real-time games:** spawn timing, enemy AI and physics must be seeded and
+  tick-based (fixed timestep), not frame-time based, or the two runs drift apart.
+  When that's out of reach, race on the deterministic part (the same level
+  layout) and say so in your docs.
+- The seed is only revealed when the countdown starts, so nobody can pre-solve.
+
+### 14.4 Trust
+
+Reports come from the players' browsers. The hub measures time itself, holds
+finishes until `minMs`, accepts one result per racer and only declared params,
+and rate-limits status, but a determined cheater can still call `finish()`.
+Races are for fun: they write the race history, never leaderboards or stats.
+(Own-server games could verify finishes on their server later; see race.md.)
+
+### 14.5 Testing
+
+Use the hub test kit (§12) with your game linked into `startHost`, two players:
+Race button → create → the other joins (Open races or code) → both `start()`s
+got the same seed and built the same puzzle → a status reaches the other's HUD
+(`#hub-social-layer >>> .so-hud`) → finish → "You won! 🏆" on one, "<name> won"
+on the other → `hub.race.history()` has it. Plus Give up / lose → the other wins.
+The hub's `test/e2e/race.test.mjs` and The 15 Puzzle's `tests/hub/race.test.mjs`
+are worked examples. `HUB_LIMITS_JSON: '{"raceCountdownMs":1200}'` keeps tests quick.
+
+**Race game definition of done:**
+
+- [ ] `game.race` declared (params, stats, `minMs`); no registry warnings.
+- [ ] A **Race** button on the main menu → a params picker → `hub.race.create`
+      (plus `hub.race.browse()` / `openHistory()` buttons).
+- [ ] `hub.race.define({ start, end, exit })` at boot; the puzzle comes from `seed` + `params` only.
+- [ ] `status()` on every change (declared stats + progress); `finish()` / `lose()` at the end.
+- [ ] Input locked until `startAt`, and after `end`.
+- [ ] Works on a 390 px phone with the HUD showing (leave room at the top, or pick another `hud.place`).
+- [ ] A `tests/hub/` race scenario (two players race; give up → the other wins).
+

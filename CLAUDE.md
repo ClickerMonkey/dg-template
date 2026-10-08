@@ -14,7 +14,7 @@ vendored. Your job: turn it into a real game.
    inventory, and the input system API).
 4. Read **`docs/multiplayer.md`** if your game is online (friends, invites,
    rooms, chat). Every game, online or not, still needs its §4 (pause when the hub
-   opens).
+   opens). A single-player puzzle can go multiplayer by **racing** (§14): no netcode.
 5. Build your game in `src/` (start by rewriting `src/main.ts`).
 6. `npm run build` → must produce `dist/` with relative asset paths.
 
@@ -122,6 +122,13 @@ Import once: `import { hub } from './hub/hub';`
   (required, see the rules above).
 - **Friends, invites, rooms, chat**: see the Multiplayer section and
   `docs/multiplayer.md`.
+- **Races** (single-player → multiplayer): declare `game.race` (params, stats,
+  `minMs`), call `hub.race.define({ start, end, exit })` at boot and build the
+  puzzle from `start(r)`'s `r.seed` + `r.params` only (seeded PRNG), add a **Race**
+  button on the main menu → `hub.race.create({ params })` (+ `hub.race.browse()`,
+  `hub.race.openHistory()`), and report `hub.race.status(stats, progress)` then
+  `finish(stats)` / `lose(stats)`. The hub does the lobby, invites, countdown,
+  live HUD, referee, result card and race history. See `docs/multiplayer.md` §14.
 - **Input** — the big one. Declare named inputs and read them uniformly on
   keyboard / mouse / touch / gamepad; the hub draws touch controls and handles
   gamepad + menu navigation. See `src/main.ts` for a full example and the
