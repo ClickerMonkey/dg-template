@@ -18,7 +18,8 @@ npm run build    # produces dist/  (what the catalog serves)
 ```
 index.html            Vite entry
 vite.config.ts        base:'./' (required — games mount under /<slug>/)
-package.json          the `game` block the catalog reads
+package.json          the `game` block the catalog reads (incl. `changes`: the
+                      player-facing "What's new" list; add a line per visible change)
 src/
   main.ts             starter game — Pixi + hub input + saves + leaderboard + daily
   hub/                vendored hub client (don't edit; `npm run sync-hub` to update)

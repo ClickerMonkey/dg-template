@@ -78,6 +78,9 @@ your game, this game's leaderboards, and a list to jump to other games. It also
 records a `play` event on load and periodic `heartbeat`s while the tab is
 visible (this drives the analytics numbers), and loads a **gamepad adapter** so
 controllers work everywhere (see [Controller & arcade support](#controller--arcade-support)).
+When your game (or the hub) has shipped changes the player hasn't seen, a
+compact **What's new** card appears near the top of the drawer (see
+[What's new](#whats-new-gamechanges)).
 
 Because it's in a Shadow DOM with `all: initial`, it won't collide with your
 game's CSS, and your CSS won't leak into it.
@@ -876,6 +879,71 @@ otherwise). The menu draws the star buttons, so most games never call these.
 
 ---
 
+## What's new (`game.changes`)
+
+Players see what changed since they last looked: a **What's new** panel on the
+home page (grouped by game, with a **Mark all as seen** button) and, in every
+game's menu, a compact **What's new** card with a count (it opens the list).
+The menu button gets a small cyan dot while anything is unseen. Nothing to wire
+up in code: you only keep a list in `package.json`.
+
+```json
+"game": {
+  "changes": [
+    "Levels 21 to 30 are here! Can you beat them all?",
+    "Fixed a bug where the music kept playing after you paused.",
+    { "id": "hats", "text": "Your crew can wear hats now. Find them in the shop!" }
+  ]
+}
+```
+
+**Every time you ship something a player would notice, append one line.** Write it
+for a player (often a kid): what they can now do or what got better, in plain
+words, one or two short sentences. Leave out internal work (refactors, build
+changes, test fixes).
+
+| Good | Not good |
+| --- | --- |
+| "You can now pause with the Escape key." | "Added pause handler" |
+| "Fixed the bug where your score reset when you changed levels." | "Fix #42 score state" |
+| "Levels 21 to 30 are here!" | "Refactored level loader, bumped vite" |
+
+How it works:
+
+- **Timestamps come from the deploy.** Every host boot (every deploy) reads each
+  live game's list. A note the database hasn't seen before is stamped with that
+  moment (when it went live). Notes already stored keep their original time.
+  A build that fails doesn't touch the game's notes.
+- **Identity.** A plain string is identified by its text (case, spacing and
+  trailing punctuation are ignored), so **rewording a string announces it
+  again**. To reword without re-announcing, use `{ "id": "short-key", "text": "…" }`
+  (id: letters, digits, `_ . : -`, up to 64 chars); its text can then change freely.
+  Typos you fix in a plain string will show as a new note, so use an id for long-lived notes you may edit.
+- **Removing** a note from the list stops it showing (it stays in the database,
+  and keeps its date if you put it back). Order doesn't matter, but appending
+  keeps the file readable. Up to 200 notes are read, 280 characters each.
+- **What's listed:** notes from the last **30 days**, at most **6 per game** and
+  **30 in total**, newest first. Hidden (`game.hidden`) and removed games never show.
+- **What counts as new** (per player, guests included, kept across guest →
+  account): a note is new when it went live after the player last cleared it
+  *and* after their account was created. Brand-new players aren't handed the
+  whole history.
+- **Clearing.** "Got it" in a game's menu marks **that game's** notes and the
+  host's own notes as seen (that's what the game's list shows). **Mark all as
+  seen** on the home page (or "Got it" in the home page's menu) marks
+  **everything** seen, across all games.
+- **Signed out** (home page with no session): the device remembers when it
+  last cleared (`localStorage` `dg:changes-seen`, shared by the panel and the
+  menu). A first visit starts that clock, so it shows nothing yet.
+- **The host's own notes** (menu, friends, chat, home page…) live in the same
+  field in the diffenderfer-games repo's `package.json` and show as
+  "diffenderfer.games" on the home page and in every game's list.
+
+The API (most games never call it): `GET /_api/changes[?game=slug]` and
+`POST /_api/changes/seen`, see [Endpoint reference](#whats-new-handlerschangesjs).
+
+---
+
 ## Social & multiplayer
 
 The hub runs one kid-safe social layer for the whole site. Games get it with no
@@ -897,7 +965,7 @@ repo.
 
   Guests get rooms and quick-chat but no friends, DMs, invites or notifications.
 - **How it loads:** the injected `menu.js` loads **`/_hub/social.js`**, which opens
-  one WebSocket per tab (`/_ws`), renders the Friends section, toasts and dialogs,
+  one WebSocket per tab (`/_ws`), renders the Friends card (which opens the Friends window), toasts and dialogs,
   and installs `window.__HUB_RT__`. The client namespaces forward to it, queueing or
   replaying until it arrives.
   - `hub.presence.set({ kind, detail?, joinable?, watchable?, room?, public?, openSeats?, mode? })` / `.clear()`
@@ -1114,13 +1182,17 @@ Every route below needs a signed-in, **not suspended** user (403 `suspended`)
 unless marked *public*. *claimed* = not a guest (403 `claim_required`). Text
 fields go through the filter and answer **422** `content_rejected` on refusal.
 
+### What's new (`handlers/changes.js`)
+- `GET /changes[?game=slug][&since=ms]` (*public*) → `{ items:[{id,game,title,text,at,new}], unseen, signedIn }`. `game`: that game's notes + the host's (`game: "_hub"`); omitted = every game. Newest first; last 30 days, ≤6 per game, ≤30 total. `since`: used only when signed out (the device's last-cleared time; none = nothing is new).
+- `POST /changes/seen` `{ game: slug }` | `{ all: true }` → `{ ok, seenAt }` (auth required, guests OK; 404 for an unknown game). `game` marks that game's notes and the host's; `all` marks everything.
+
 ### Social (`handlers/social.js`)
 - `GET  /social/config` (*public*) → `{chatMode, ai, contactUrl, parentsUrl, vapidPublicKey, quickChat:{id:text}, emotes, limits:{dmMaxChars,roomChatMaxChars,suggestionTitleMax,suggestionBodyMax}, avatars}`
 - `GET  /social/me` → `{me:{id,username,avatar,guest,role,privacy,dmPolicy,chatLock,mutedUntil,suspendedUntil?}, notify, pushSubs}` (allowed while suspended)
 - `PUT  /social/me` (*claimed*) `{avatar?, privacy?: 'friends'|'nobody', dmPolicy?: 'friends'|'nobody'}` → `{me}`
 - `POST /social/chat-lock` (*claimed*) `{on:true}` or `{on:false, password}` → `{me}` (parent lock; turning it off needs the password, 5 tries / 15 min, 403 `bad_password`)
 - `GET  /social/friends` → `{friends:[FriendEntry], incoming, outgoing, blocked}` (guests get empty lists)
-- `POST /social/friends` (*claimed*) `{username}` or `{userId}` → `{status:'requested'|'friends'}` (a reverse request auto-accepts; errors `no_player`, `bad_target`, `guest_target`, `blocked`, `pending_limit`, `friends_limit`, `friend_requests_off`, `rate_limited`)
+- `POST /social/friends` (*claimed*) `{username}` or `{userId}`, plus optional `message` → `{status:'requested'|'friends'}` (a reverse request auto-accepts; `message` is a first message, moderated as a DM up front — a rejection is a 422 and no request is made — then held and delivered as the first DM once they're friends, never shown to a non-friend; errors `no_player`, `bad_target`, `guest_target`, `blocked`, `pending_limit`, `friends_limit`, `friend_requests_off`, `rate_limited`)
 - `POST /social/friends/:id/accept` · `/decline` (*claimed*) → `{ok}`
 - `DELETE /social/friends/:id` (*claimed*) → `{ok}` (unfriend or cancel an outgoing request)
 - `PUT  /social/friends/:id/notify` (*claimed*) `{online}` → `{ok}` ("tell me when they're online")
@@ -1226,10 +1298,18 @@ game is hosted; the path-segment fallback only kicks in if it's absent.
 
 ## Changelog
 
+- **2026-10-08** — **What's new.** Games list player-facing changes in
+  `package.json` `game.changes`; each deploy stamps new notes with the time it
+  went live. Shown in a home-page panel and a compact menu card (with a count and
+  a dot on the menu button), with per-player seen marks (per game, or everything
+  from the home page). See [What's new](#whats-new-gamechanges). `menu.js` and
+  the home page only: **no client re-sync needed**, but please add notes to
+  your game from now on.
+
 - **2026-10-04** — **Native multiplayer & kid-safe social layer.**
   - **Social for every game, with no code:** friends, presence, DMs, invites,
     parties, game suggestions, opt-in Web Push notifications and report/block. It
-    lives in the menu's Friends section via the new runtime `/_hub/social.js`
+    lives in the menu's Friends card / window via the new runtime `/_hub/social.js`
     over `/_ws`.
   - **New client namespaces:** `hub.overlay` (pause events + `autoPause`, **adopt in
     every game**), `hub.presence`, `hub.social`, `hub.mp`, `hub.rooms`, `hub.notify`.

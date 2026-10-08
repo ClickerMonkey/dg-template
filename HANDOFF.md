@@ -68,6 +68,7 @@ app sees requests as if mounted at root — **but** the browser still sees
 | `pwa`         | no       | `false` opts out of the install/offline (PWA) tags + service worker |
 | `controls`    | no       | Gamepad→key map for controller/arcade play (see the hub)    |
 | `multiplayer` | no       | Makes the game an online invite/join target — see `docs/multiplayer.md` |
+| `changes`     | no       | Player-facing "What's new" notes, one per change (see below) — **keep it updated** |
 
 ### Process (build then run a long-lived server the catalog proxies to)
 
@@ -101,6 +102,7 @@ app sees requests as if mounted at root — **but** the browser still sees
 | `pwa`         | no       | `false` opts out of the install/offline (PWA) tags + service worker |
 | `controls`    | no       | Gamepad→key map for controller/arcade play (see the hub)    |
 | `multiplayer` | no       | Makes the game an online invite/join target — see `docs/multiplayer.md` |
+| `changes`     | no       | Player-facing "What's new" notes, one per change (see below) — **keep it updated** |
 
 > **Ports:** the host assigns each process app a free port (via `PORT`/
 > `GAME_PORT` and the `{{PORT}}` placeholder) and **probes that it's actually
@@ -232,6 +234,34 @@ the card just renders without a thumbnail.
 
 The card shows `pkg.author` (string or `{name, ...}` object — name is
 extracted) and `game.description || pkg.description`.
+
+---
+
+## What's new: `game.changes` (keep it updated!)
+
+Players see a **What's new** list on the home page and in your game's menu,
+built from `game.changes` in `package.json`. **Whenever you ship a change a
+player would notice** (a feature, new content, a fix they'd feel, a controls
+change), **append one line** in the same commit. The deploy stamps it with the
+time it went live; existing lines keep their dates.
+
+```json
+"changes": [
+  "You can now pause with the Escape key.",
+  { "id": "ghost", "text": "A ghost piece shows where your block will land." }
+]
+```
+
+- Write for a player, often a kid: what they can do now or what got better,
+  in plain words, one or two short sentences. No jargon, issue numbers or file names.
+- Good: "Fixed the bug where your score reset when you changed levels."
+  Not good: "Fix score state bug (#42)", "Refactor renderer", "Bump vite".
+- Skip changes players can't see (refactors, build/test/CI work).
+- A plain string is identified by its text, so editing it later re-announces
+  it. Use `{ "id", "text" }` if you may reword it. Removing a line hides it.
+- A brand-new game can start with `"changes": []`.
+
+Details (what counts as new, clearing, limits): `docs/hub.md` → "What's new".
 
 ---
 

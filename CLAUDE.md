@@ -29,6 +29,12 @@ vendored. Your job: turn it into a real game.
   `serveDir: "dist"`, **unless `docs/multiplayer.md` tells you to use
   `own-server`** (a real-time competitive game with its own server is a
   `process` app; see HANDOFF.md).
+- **Keep `game.changes` updated** (the player-facing "What's new" list in
+  `package.json`, starts empty). Whenever you ship something a player would
+  notice, append one short, plain-language line a kid would understand, e.g.
+  `"You can now pause with the Escape key."`, not `"Add pause handler"`. Skip
+  refactors/build/test work. Use `{ "id", "text" }` if you may reword it later.
+  (HANDOFF.md § What's new; docs/hub.md "What's new".)
 - **Output to `dist/`** via `npm run build` (Vite). Don't change that contract.
 - **Don't edit `src/hub/*`.** That's the vendored hub client
   (`hub.ts`, `input.ts`, `overlay.ts`, `legacy.ts`, `daily.ts`, `uistack.ts` and
@@ -145,6 +151,8 @@ worker + manifest) automatically; nothing to add.
   on a touch screen via the on-screen controls.
 - `package.json` `game.title`/`description` describe your game; a `cover.png` +
   `game.image` is a nice touch.
+- `game.changes` has a line for each player-visible change you shipped (once the
+  game is live; a brand-new game can leave it empty).
 - Progress saves via `hub.putSave` and (if competitive) a leaderboard is wired.
 - If the game has music, it's rendered in a background worker (docs/audio.md)
   and plays without gaps on a phone.

@@ -82,7 +82,7 @@ your game (browser)                         the hub (same origin)
   `hub.mp`, `hub.rooms` and `hub.notify` forward to the runtime the hub injects into
   every game page (`/_hub/social.js`). So social features update without re-syncing
   your game.
-- **The hub draws the UI:** the Friends section in the menu, player cards, chat, invite
+- **The hub draws the UI:** the Friends card in the menu (it opens the Friends window), player cards, chat, invite
   toasts, the invite picker and notification settings. Your game opens those screens
   (`hub.social.open*`) and reacts to their results (launches).
 - **Players:** a **claimed** account can do everything. A **guest** can create and join
@@ -235,7 +235,7 @@ hub.overlay.canPause;    // false during setBusy(true)
 ## 5. Notifications & `lobby_open`
 
 Players opt in (everything is off by default) from **Notifications** in the hub menu,
-or with one tap on the **"🔔 Get a buzz…"** card in the Friends section (it turns on
+or with one tap on the **"🔔 Get a buzz…"** card in the Friends window (it turns on
 messages, requests and any-friend-online for that device). Alerts buzz the phone
 when the site is in the background or closed; tapping one focuses the open app and
 opens the chat / player card in place (or opens the site if nothing is running).

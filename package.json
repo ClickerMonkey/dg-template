@@ -19,7 +19,8 @@
     "serveDir": "dist",
     "menuPosition": "top-right",
     "image": "cover.png",
-    "dailyChallenges": true
+    "dailyChallenges": true,
+    "changes": []
   },
   "dependencies": {
     "pixi.js": "^8.6.0"
