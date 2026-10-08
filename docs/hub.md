@@ -529,9 +529,8 @@ Each input exposes `value`/`raw` (`0..1`), `isDown`, `isUp` (frame-based edges).
   (`circle`/`round`/`square`/`pill`), `axis` for sticks (`both` default, or a
   single-axis `x`/`y` — e.g. a horizontal `pill` stick for a side-scroller),
   `color` (border/knob/pressed), `bg`,
-  `text`, `opacity`, and `label`/`html`. Buttons cluster *beside* a joystick
-  sharing the same corner (no overlap), and players can drag-reposition + the
-  layout persists. Controls hide when a gamepad is active (toggle in the menu's
+  `text`, `opacity`, and `label`/`html`. See [Touch control layout](#touch-control-layout)
+  for where they go and how to keep them off your HUD. Controls hide when a gamepad is active (toggle in the menu's
   **Controls**). By default, virtual controls show on touch devices and hide
   otherwise; a game that doesn't need them on touch can set a different default
   with `hub.input.setVirtualDefault(false)` (pass `true` to force-show, `null`
@@ -539,6 +538,49 @@ Each input exposes `value`/`raw` (`0..1`), `isDown`, `isUp` (frame-based edges).
 - Keyboard always works; **mouse and gamepad are last-used-wins** (using the
   gamepad ignores the mouse until the mouse moves again). Subscribe with
   `hub.input.on('sourcechange', s => …)`.
+
+### Touch control layout
+
+The hub places every virtual control for the current screen and re-places them
+on every resize and rotation:
+
+- **Sticks** sit in their `place` corner, side by side inward.
+- **Buttons** cluster *beside* the sticks sharing their corner (stacked in
+  columns, three per column). On a screen where that doesn't fit (a 360–430px
+  portrait phone with a stick in each bottom corner) every corner cluster with
+  sticks moves into **rows above its sticks** (below, for top corners), the
+  first-declared button innermost, each side kept to its half of the screen.
+  `top`/`bottom`/`center` buttons form a centred row.
+- **No overlaps:** auto-placed controls never overlap each other, a stick, a
+  `pos`-pinned control or one the player dragged. A button that still has no
+  room moves to the nearest free spot.
+- Everything stays inside the device **safe area** (notch, home bar), 22px
+  from the edges, and clear of the hub's race HUD while it shows.
+- **Player layouts win:** a control the player dragged (menu **Controls → Edit
+  touch layout**) keeps its spot, stored as % of the screen, across resizes and
+  rotations. It is re-clamped on-screen, and nudged to the nearest free spot if
+  the rotation would put it on a stick. **Reset to defaults** clears it.
+
+To keep controls off your own HUD:
+
+```ts
+// A band along an edge that auto-placed controls avoid (px from that edge).
+// Merged with earlier calls; pass 0 to clear an edge. Re-layout is immediate.
+const hud = document.getElementById('hud')!;
+const sync = () => hub.input.setInsets({ top: Math.ceil(hud.getBoundingClientRect().bottom) });
+sync(); new ResizeObserver(sync).observe(hud); addEventListener('resize', sync);
+
+// Or nudge one control away from its anchor's edges (px): x inward from the
+// left/right edge, y away from the top/bottom edge.
+{ id: 'restart', type: 'button', place: 'top-right', offset: { y: 60 } }
+
+// Or pin it outright (px from the viewport edges; skips the auto layout).
+{ id: 'pause', type: 'button', place: 'bottom-left', pos: { left: 18, bottom: 176 } }
+```
+
+`setInsets` and `offset` only move auto-placed controls; `pos` and the player's
+dragged spots ignore them. `setInsets` is newer than some hub builds, so a game
+loading `/_hub/hub.js` can guard it: `hub.input.setInsets?.({ top })`.
 
 ### Navigable menus (the easy way)
 
@@ -1303,6 +1345,17 @@ game is hosted; the path-segment fallback only kicks in if it's absent.
 ---
 
 ## Changelog
+
+- **2026-10-08** — **Touch control layout.** The auto layout is width-aware and
+  collision-free: on narrow portrait phones buttons stack in rows above the
+  sticks instead of piling up between them, and no auto-placed control overlaps
+  another or leaves the safe area. A player's dragged layout now survives
+  resizes and rotations (it used to snap back to the defaults until reload), and
+  **Edit touch layout** shrinks the Controls panel to a small bar so the
+  controls can actually be dragged. New: `hub.input.setInsets({top,…})` and a
+  per-control `offset` to keep controls off a game's HUD. See
+  [Touch control layout](#touch-control-layout). **Vendored games: re-sync.**
+
 
 - **2026-10-08** — **What's new.** Games list player-facing changes in
   `package.json` `game.changes`; each deploy stamps new notes with the time it
