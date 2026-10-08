@@ -1316,15 +1316,44 @@ names). Set them on the systemd unit (see `DEPLOY.md`).
 |---|---|---|
 | `HUB_ADMINS` | `ClickerMonkey` | Comma list of usernames (case-insensitive) that become admins once **claimed**. The role sticks to the user id. |
 | `HUB_CHAT` | `on` | Site chat switch: `on` (friends free text + quick-chat), `quick` (phrases only), `off` (no messaging). The admin switch can only tighten it. |
-| `HUB_MOD_OPENROUTER_KEY` / `HUB_MOD_MODEL` | unset | Enable the AI reviewer (both needed), e.g. model `anthropic/claude-haiku-4.5`. Unset means rules-only: friends keep free text, checked by the word filter. |
-| `HUB_MOD_MODEL_SLOW` | `= HUB_MOD_MODEL` | Model for usernames and suggestions (not latency-sensitive). |
-| `HUB_MOD_TIMEOUT_MS` | `2500` | AI call timeout. Failures fail closed (`check_unavailable`). |
+| `HUB_MOD_OPENROUTER_KEY` | unset | OpenRouter key for the AI reviewer (every engine). Unset means rules-only: friends keep free text, checked by the word filter. |
+| `HUB_MOD_ENGINE` | `llm` | Which AI reviewer runs: `llm` (a chat model follows `safety/ai-rubric.md`), `guard` (TypeSafe's Jev decision model answers `safety/jev-questions.json`) or `both` (Jev first, the LLM decides the uncertain ones). The admin Live tab can override it at runtime. An engine that isn't configured is rules-only. See "AI engines" below. |
+| `HUB_MOD_MODEL` | unset | The `llm` engine's OpenRouter model, e.g. `anthropic/claude-haiku-4.5`. Needed for `llm` and `both`. With only the key + this set, behaviour is exactly as before the guard engine existed. |
+| `HUB_MOD_MODEL_SLOW` | `= HUB_MOD_MODEL` | LLM model for usernames and suggestions (not latency-sensitive). |
+| `HUB_MOD_GUARD_MODEL` (alias `HUB_MOD_JEV_MODEL`) | `typesafe/jev-1.13` | The `guard` engine's Jev release. Keep it **pinned**: Jev's probabilities (and so the thresholds) are tuned per release; don't use `~typesafe/jev-latest`. Re-run the comparison before moving to a new release. |
+| `HUB_MOD_JEV_THRESHOLD_CHAT` | `0.4` | Jev blocks a DM / room / party message when P(unsafe) ≥ this. |
+| `HUB_MOD_JEV_THRESHOLD` | `0.5` | Same for usernames, room names and suggestions. |
+| `HUB_MOD_ESCALATE_BAND` | `0.2,0.7` | `both`: P(unsafe) below the low end is allowed and at/above the high end blocked by Jev alone; in between (or grown-up hints inside a conversation, or a Jev error) the LLM decides. |
+| `HUB_MOD_TIMEOUT_MS` | `2500` | AI call timeout (per call). Failures fail closed (`check_unavailable`). |
+| `HUB_MOD_GUARD_TIMEOUT_MS` | `1500` (capped by `HUB_MOD_TIMEOUT_MS`) | Jev call timeout. Healthy Jev answers in a few hundred ms; a short timeout lets `both` hand a slow message to the LLM quickly. |
 | `HUB_CONTACT_URL` | unset | Parents' contact link on `/parents` (a mailto: or form URL). The section is hidden when unset. |
 | `HUB_VAPID_PUBLIC` / `HUB_VAPID_PRIVATE` | generated into `DATA_DIR/vapid.json` | Web Push keys (base64url, raw P-256). Back the file up. New keys invalidate every push subscription. |
 | `HUB_MP_SECRET` | random, persisted to `DATA_DIR/mp-secret` | Root secret for game tickets and per-game `HUB_APP_KEY`s. |
 | `HUB_REALTIME` | on | `0` disables `/_ws` (an escape hatch: social goes quiet, single-player is unaffected). |
 | `HUB_TEST` | off | `1` = test mode: relaxed limits, fake AI, push outbox, `/_api/test/*`. **Never in production.** |
 | `HUB_LIMITS_JSON` | `{}` | JSON overrides for any `SOCIAL_LIMITS` field (tests). |
+
+### AI engines
+
+The AI reviewer (stage 2 of moderation, after the word filter) has two engines and a
+combination. All three share the failure policy (not configured → rules-only;
+configured but failing → fail closed with "try again"; 10 straight failures pause that
+engine for 2 minutes), the 10k-entry verdict cache (keyed by engine + model) and the
+`HUB_TEST` fake (`[[block]]` / `[[aierror]]`). Hints, strikes and log severity are the
+same whichever engine blocks; the moderation log tags AI rejects with `llm` or `guard`.
+
+| Engine | What runs | Cost / latency (measured) | Strengths | Weaknesses |
+|---|---|---|---|---|
+| `llm` | A chat model (`HUB_MOD_MODEL`) reads the rubric + last 6 messages and answers JSON. | ≈ $0.0012 per message; median ≈ 0.8 s, p90 ≈ 1.4 s (Claude Haiku 4.5) | Reliable; best at nuance it can explain. Caught every grooming line in our sample. | ~24x the cost of Jev; missed "my brother vapes" and labels disguised swearing `other`/`unkind`. |
+| `guard` | TypeSafe's **Jev** (`HUB_MOD_GUARD_MODEL`, OpenRouter Decisions API) returns P(unsafe) and a reason for the questions in `jev-questions.json`, with the same 6 messages of context. | ≈ $0.00005 per message (the questions are ~1.5k input tokens; output is free); ≈ 200 ms when healthy | When it answered, it was right on every message of the 47-message sample (safe ≤ 0.10, unsafe ≥ 0.78, so thresholds have a wide margin), incl. subtle grooming and "s n a p". Probabilities let you tune strictness without prompt edits. | A young provider: on 2026-10-08 the median was ~4 s and ~1 in 5 calls failed (timeouts, 529 overloaded, 503). Alone, every failure is a fail-closed "try again". |
+| `both` | Jev first (1.5 s timeout); confident answers stand, the uncertain band (and grown-up hints in a conversation) goes to the LLM. If Jev fails the LLM covers; if the LLM fails Jev's verdict stands. | Jev on every message + the LLM on the few uncertain or failed ones (on our sample: only Jev's failures escalated) | 47/47 right on the sample; survives either provider failing; LLM cost only on escalations. | Two providers to watch; when Jev is slow, messages wait up to the guard timeout before the LLM. |
+
+**Recommendation:** `both` for production (chat, names and suggestions alike): it
+keeps Jev's accuracy and cost when Jev is healthy and degrades to the LLM when it isn't.
+Use `guard` alone only once Jev's latency and error rate look stable in the Live tab
+(names and suggestions tolerate it best); `llm` alone stays the simplest reliable
+choice. The Live tab shows per-engine checks, block rate, errors, latency and cost
+since the host started, so you can switch at runtime and compare.
 | `HUB_APPS_DIR` | `<repo>/apps` | Where to scan for apps (the test kit points it at a temp dir). |
 
 ---
