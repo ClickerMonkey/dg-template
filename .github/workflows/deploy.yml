@@ -14,9 +14,8 @@
 #          Linux only) — for when the machine is off (costs Actions minutes on
 #          a private repo).
 #
-# DEPLOY_SSH_KEY and DEPLOY_HOST come from the diffenderfer-games ORG secrets
-# (private repos); a repo secret of the same name overrides them. Otherwise
-# configure in the repo's Settings → Secrets and variables → Actions:
+# Repo secrets (each repo's own; Settings → Secrets and variables → Actions,
+# e.g. gh secret set DEPLOY_SSH_KEY -R diffenderfer-games/<game> < keyfile):
 #   DEPLOY_SSH_KEY      private deploy key                 (required to enable)
 #   DEPLOY_HOST         host or droplet IP  (optional, default: diffenderfer.games)
 #   DEPLOY_USER         ssh user            (optional, default: root)

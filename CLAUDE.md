@@ -176,7 +176,8 @@ into the host's `apps/<slug>/` (see HANDOFF.md / the host's DEPLOY.md).
 
 Games are private repos in the GitHub organization **diffenderfer-games**
 (`https://github.com/diffenderfer-games/<slug>`), created from this template
-(README "Where games live"). Pushing to `main`/`master` deploys: the deploy
-secrets come from the org and the org's self-hosted runner runs the deploy, so
-don't add secrets, runners or workflow changes for that. The template repo
+(README "Where games live"). Pushing to `main`/`master` deploys: the repo's own
+deploy secrets (`DEPLOY_SSH_KEY`, `DEPLOY_HOST`, added when the repo is created)
+and the org's self-hosted runner run the deploy, so don't add runners or
+workflow changes for that. The template repo
 itself is public and runs on GitHub-hosted runners (`CI_ON=github`).

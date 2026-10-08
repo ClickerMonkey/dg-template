@@ -19,10 +19,13 @@ To start a new game:
    the host repo (`git clone https://github.com/diffenderfer-games/<slug>.git`).
    Locally, `tools/New-Game.ps1` makes the folder from this template instead;
    then create an empty private repo in the org and push to it.
-2. **Deploy secrets come from the org**: `DEPLOY_SSH_KEY` and `DEPLOY_HOST` are
-   organization secrets shared by every private repo, so a new game needs **no**
-   repo secrets. Add one only to override (e.g. `DEPLOY_PATH` when the server
-   folder isn't the repo name); a repo secret wins over the org one of the same name.
+2. **Add the deploy secrets to the repo** (Settings → Secrets and variables →
+   Actions, or `gh`):
+   `gh secret set DEPLOY_SSH_KEY -R diffenderfer-games/<slug> < ~/.ssh/diffenderfer_deploy`
+   and `gh secret set DEPLOY_HOST -R diffenderfer-games/<slug> -b diffenderfer.games`
+   (`DEPLOY_HOST` defaults to `diffenderfer.games` if unset). Add `DEPLOY_PATH` only
+   when the server folder isn't the repo name. Each repo has its own copies: org
+   secrets would need a paid plan for private repos.
 3. **The org's self-hosted Windows runner deploys it automatically**: one runner on
    the owner's machine serves every private repo in the org, so there is nothing to
    register. The variable `CI_ON` switches where the deploy runs: `self` (default,
@@ -36,7 +39,7 @@ To start a new game:
    § 12 "Adding a new game". Until then its deploy has nowhere to pull.
 
 **This template repo itself is public** (so it can be used as a template and read
-freely). Public repos never get the org's self-hosted runner or its secrets: its
+freely). Public repos never get the org's self-hosted runner, and it has no deploy secrets: its
 repo variable `CI_ON=github` keeps its own workflow on GitHub-hosted runners (free
 for public repos), where the deploy just skips. A game made from it is private and
 uses the org runner.
@@ -101,8 +104,7 @@ host repo and symlink it into `apps/<slug>/` (see the host's `DEPLOY.md`). The
 catalog discovers it, runs `npm run build`, and serves `dist/` under `/<slug>/`.
 
 Deploys: `.github/workflows/deploy.yml` deploys on every push to `main`/`master`
-once `DEPLOY_SSH_KEY` is available — for a private repo in the
-diffenderfer-games org it is, from the org's secrets. By default the deploy runs
+once the repo secret `DEPLOY_SSH_KEY` is set ("Where games live", step 2). By default the deploy runs
 on the org's self-hosted Windows runner (no Actions minutes; nothing to register
 per repo — see the host's
 [RUNNERS.md](https://github.com/diffenderfer-games/diffenderfer-games/blob/master/RUNNERS.md)).
