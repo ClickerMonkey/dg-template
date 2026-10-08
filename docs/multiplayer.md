@@ -1300,6 +1300,18 @@ on the other → `hub.race.history()` has it. Plus Give up / lose → the other 
 The hub's `test/e2e/race.test.mjs` and The 15 Puzzle's `tests/hub/race.test.mjs`
 are worked examples. `HUB_LIMITS_JSON: '{"raceCountdownMs":1200}'` keeps tests quick.
 
+**Making room for the race HUD.** The hub keeps the HUD clear of its own menu
+button (it narrows or drops below it), and tells the game where the HUD sits so
+your top/bottom UI can move out of its way:
+
+- CSS variables on `<html>`: `--hub-race-hud-top` / `--hub-race-hud-bottom`, the px
+  the HUD covers from that edge (`0px` when there is none), e.g.
+  `.topbar { top: calc(8px + var(--hub-race-hud-top, 0px)); }`;
+- a window event `hub:race-hud` with `{ visible, place, top, bottom }` whenever it changes.
+
+There is no separate Give up to build: the HUD has it. Stats with `format: 'color'`
+show as a colour swatch in the HUD and on the result card.
+
 **Race game definition of done:**
 
 - [ ] `game.race` declared (params, stats, `minMs`); no registry warnings.
