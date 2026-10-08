@@ -150,7 +150,7 @@ paths relative, so it works under `/<slug>/` with `base: './'`.
 
 ## A fuller reference
 
-Dino Dasher (`ClickerMonkey/dinodasher`) has a complete version:
+Dino Dasher (`diffenderfer-games/dinodasher`) has a complete version:
 
 - `src/audio/dsp/synth.ts`: a sample-level synth with table sine, polyBLEP saw,
   noise, Web Audio-style envelopes and automation, RBJ biquads and an FDN reverb.

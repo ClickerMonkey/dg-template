@@ -1,7 +1,7 @@
 # Adding a project to diffenderfer.games
 
 Hand this file to another Claude instance (or read it yourself) when integrating
-a new project into the [diffenderfer.games](https://github.com/clickermonkey/diffenderfer-games)
+a new project into the [diffenderfer.games](https://github.com/diffenderfer-games/diffenderfer-games)
 catalog host. It explains the `game` block in `package.json`, the build/runtime
 contract, and the path-handling fixes apps almost always need.
 

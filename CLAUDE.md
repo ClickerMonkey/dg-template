@@ -164,3 +164,12 @@ worker + manifest) automatically; nothing to add.
 
 To install into the catalog later: clone next to the host repo and symlink it
 into the host's `apps/<slug>/` (see HANDOFF.md / the host's DEPLOY.md).
+
+## Where the repo lives
+
+Games are private repos in the GitHub organization **diffenderfer-games**
+(`https://github.com/diffenderfer-games/<slug>`), created from this template
+(README "Where games live"). Pushing to `main`/`master` deploys: the deploy
+secrets come from the org and the org's self-hosted runner runs the deploy, so
+don't add secrets, runners or workflow changes for that. The template repo
+itself is public and runs on GitHub-hosted runners (`CI_ON=github`).

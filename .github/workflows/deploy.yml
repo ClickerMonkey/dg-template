@@ -5,16 +5,18 @@
 #
 # CI_ON (repo variable, Settings → Secrets and variables → Actions → Variables;
 # or a manual run's input) picks where the deploy runs:
-#   self   (default) the owner's self-hosted Windows runner (DESKTOP-M6EK2BJ,
-#          registered per repo by the host repo's scripts/register-runners.ps1,
-#          see its RUNNERS.md) — SSH with Windows' own OpenSSH client; uses no
+#   self   (default) the diffenderfer-games org's self-hosted Windows runner
+#          (DESKTOP-M6EK2BJ; one org-level runner serves every private repo in
+#          the org — the host repo's RUNNERS.md) — SSH with Windows' own OpenSSH client; uses no
 #          GitHub Actions minutes. With no runner online the job waits (up to
 #          24 h) for one.
 #   github GitHub-hosted ubuntu-latest via appleboy/ssh-action (a Docker action,
 #          Linux only) — for when the machine is off (costs Actions minutes on
 #          a private repo).
 #
-# Configure in the repo's Settings → Secrets and variables → Actions:
+# DEPLOY_SSH_KEY and DEPLOY_HOST come from the diffenderfer-games ORG secrets
+# (private repos); a repo secret of the same name overrides them. Otherwise
+# configure in the repo's Settings → Secrets and variables → Actions:
 #   DEPLOY_SSH_KEY      private deploy key                 (required to enable)
 #   DEPLOY_HOST         host or droplet IP  (optional, default: diffenderfer.games)
 #   DEPLOY_USER         ssh user            (optional, default: root)
