@@ -11,7 +11,7 @@
  * CLAUDE.md for the build/integration rules and docs/hub.md for the full hub API.
  */
 import { Application, Graphics, Text } from 'pixi.js';
-import { hub } from './hub/hub';
+import { hub } from '@diffenderfer-games/hub';
 
 // A tiny seeded PRNG (mulberry32). Daily challenges hand you a numeric `seed`
 // for the day; deriving everything from it makes the challenge identical for

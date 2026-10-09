@@ -66,10 +66,7 @@ package.json          the `game` block the catalog reads (incl. `changes`: the
                       player-facing "What's new" list; add a line per visible change)
 src/
   main.ts             starter game — Pixi + hub input + saves + leaderboard + daily
-  hub/                vendored hub client (don't edit; `npm run sync-hub` to update)
-    hub.ts input.ts overlay.ts legacy.ts daily.ts uistack.ts
-    social/rt-types.ts  social/multiplayer wire types (types only)
-scripts/sync-hub.mjs  re-copies src/hub/* + the docs below from ../diffenderfer-games
+scripts/sync-docs.mjs re-copies the three docs below from ../diffenderfer-games
 HANDOFF.md            how the catalog builds & mounts a game (read this; synced from the host)
 docs/hub.md           full hub API: accounts, saves, leaderboards, input, … (synced from the host)
 docs/multiplayer.md   friends, presence, invites, rooms, chat, races (§14) (read if online or racing; synced from the host)
@@ -82,25 +79,36 @@ CLAUDE.md             brief for an AI assistant building the game
 Point a fresh Claude Code instance at this folder and tell it to make a game —
 it reads `CLAUDE.md`. Or do it yourself: rewrite `src/main.ts`, set your
 `game.title`/`description` in `package.json`, keep `base:'./'`, and use
-`import { hub } from './hub/hub'` for online features and input. See `CLAUDE.md`
+`import { hub } from '@diffenderfer-games/hub'` for online features and input. See `CLAUDE.md`
 and `docs/hub.md`. Online games (invites, rooms, chat) follow
 `docs/multiplayer.md`.
 
-## Updating the hub client & docs
+## Updating the hub client
+
+The hub client is the npm package
+[`@diffenderfer-games/hub`](https://www.npmjs.com/package/@diffenderfer-games/hub),
+pinned to an exact version in `package.json` (a `2.0.0-next.N` prerelease for
+now). Never copy its sources into the game.
 
 ```bash
-npm run sync-hub                     # from ../diffenderfer-games
-npm run sync-hub -- ../path/to/host  # or DG_HOST=... npm run sync-hub
+npm install --save-exact @diffenderfer-games/hub@<version>   # then npm run build
+npm run hub-doctor   # supported by the live hub, game.* is valid, no vendored copy
 ```
 
-This copies the host's canonical files:
-- `clients/{hub,input,overlay,legacy,daily,uistack}.ts` → `src/hub/`;
-- `clients/social/rt-types.ts` → `src/hub/social/`;
-- `docs/hub.md`, `docs/multiplayer.md` and `HANDOFF.md` → the same paths here;
-- `clients/server/hub-server.mjs` → `server/`, only if the game has a `server/`
-  directory (own-server games).
+## Updating the docs and the game-server SDK
 
-Never hand-edit these copies.
+```bash
+npm run sync-docs                      # from ../diffenderfer-games
+npm run sync-docs -- ../path/to/host   # or DG_HOST=... npm run sync-docs
+```
+
+This copies `docs/hub.md`, `docs/multiplayer.md` and `HANDOFF.md` from the
+host. Never hand-edit these copies.
+
+Own-server games (with a `server/` folder) keep a copy of the game-server SDK
+in `server/hub-server.mjs`. It is not on npm: `npm run sync-hub-server` copies
+the build from the sibling host checkout (`../diffenderfer-games`, after
+`npm ci` in its `next/`). Then run the game's tests and commit just that file.
 
 ## Hosting
 

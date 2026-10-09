@@ -1,8 +1,8 @@
 # Build a diffenderfer.games game
 
 You are building a game for the **diffenderfer.games** catalog. This is a ready
-TypeScript + Vite + **PixiJS v8** starter with the shared **hub** client already
-vendored. Your job: turn it into a real game.
+TypeScript + Vite + **PixiJS v8** starter with the shared **hub** client
+installed from npm. Your job: turn it into a real game.
 
 ## Start here (in order)
 
@@ -36,12 +36,12 @@ vendored. Your job: turn it into a real game.
   refactors/build/test work. Use `{ "id", "text" }` if you may reword it later.
   (HANDOFF.md § What's new; docs/hub.md "What's new".)
 - **Output to `dist/`** via `npm run build` (Vite). Don't change that contract.
-- **Don't edit `src/hub/*`.** That's the vendored hub client
-  (`hub.ts`, `input.ts`, `overlay.ts`, `legacy.ts`, `daily.ts`, `uistack.ts` and
-  `social/rt-types.ts`), a snapshot of the host's canonical client. Import from it.
-  To update it, run `npm run sync-hub` (it copies from `../diffenderfer-games`).
-  The same sync also refreshes **`docs/hub.md`, `docs/multiplayer.md` and
-  `HANDOFF.md`**. Those are the host's canonical docs, so don't edit them here either.
+- **The hub client comes from npm, never a vendored copy.** It is the package
+  `@diffenderfer-games/hub`, pinned to an exact version in `package.json` (see
+  "How the hub client arrives"). Don't add a `src/hub/` copy or a sync script.
+- **Don't edit `docs/hub.md`, `docs/multiplayer.md` or `HANDOFF.md`.** They are
+  the host's canonical docs; `npm run sync-docs` refreshes them from
+  `../diffenderfer-games`.
 - **Pause when the hub opens: every game, single-player included.** Call
   `hub.overlay.autoPause({ pause })` once at boot, so opening the hub menu, a chat
   or an invite pauses the game the way your own pause does. Action games show
@@ -106,9 +106,27 @@ Read **`docs/multiplayer.md`** when players should play **together** in your gam
   on hub open, chat reject/soften/quick-only/off, reconnect, suspended), using the
   hub's test kit (`startHost` + `mpdemo`).
 
+## How the hub client arrives
+
+The hub client is the npm package **`@diffenderfer-games/hub`** (it pulls in
+`@diffenderfer-games/hub-contract`). Its types and TSDoc come with it.
+
+- **Update:** `npm install --save-exact @diffenderfer-games/hub@<version>`, then
+  `npm run build`. While it is on `2.0.0-next.N` prereleases, keep the exact pin.
+- **Check:** `npm run hub-doctor`. It fails if the installed client is outside the
+  live hub's supported range or the `game.*` block is invalid, and warns about a
+  leftover vendored copy. Run it before pushing.
+- **Entry points:** `@diffenderfer-games/hub` (everything most games use), plus
+  `/input`, `/daily`, `/race`, `/social`, `/mp`, `/rooms` and `/types`.
+- **Own-server games** keep `server/hub-server.mjs` (the game-server SDK, not on
+  npm): `npm run sync-hub-server` copies it from the sibling host checkout.
+- **Hub tests** (`tests/hub/`) use the host checkout's test kit (`DG_HOST`,
+  default `../diffenderfer-games`); run them with `HUB_IMPL=next`, the hub
+  production runs.
+
 ## Using the hub (all optional, all free — no backend to run)
 
-Import once: `import { hub } from './hub/hub';`
+Import once: `import { hub } from '@diffenderfer-games/hub';`
 
 - **Accounts** are handled by the injected menu (guest auto-created; players can
   claim/login). You usually just read `await hub.me()`.

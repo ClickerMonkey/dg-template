@@ -9,7 +9,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "sync-hub": "node scripts/sync-hub.mjs"
+    "sync-docs": "node scripts/sync-docs.mjs",
+    "sync-hub-server": "cd ../diffenderfer-games/next && npx tsx --conditions=source tools/sync-hub-server.ts",
+    "hub-doctor": "hub-doctor"
   },
   "game": {
     "type": "static",
@@ -23,6 +25,7 @@
     "changes": []
   },
   "dependencies": {
+    "@diffenderfer-games/hub": "2.0.0-next.1",
     "pixi.js": "^8.6.0"
   },
   "devDependencies": {
