@@ -1,30 +1,31 @@
-# Auto-deploy on push — SSHes into the diffenderfer.games host, pulls, installs,
-# and asks the host to rebuild only this game. It only runs when the
-# deploy key is configured, so a freshly-cloned game (no secrets) just
-# skips deploy instead of failing.
+# Auto-deploy on push: SSHes into the diffenderfer.games host, pulls, installs,
+# and asks the host to rebuild only this game. It only runs when the deploy key
+# is configured, so a freshly-created game (no secrets) just skips the deploy
+# instead of failing.
 #
-# CI_ON (repo variable, Settings → Secrets and variables → Actions → Variables;
-# or a manual run's input) picks where the deploy runs:
-#   self   (default) the diffenderfer-games org's self-hosted Windows runner
-#          (DESKTOP-M6EK2BJ; one org-level runner serves every private repo in
-#          the org — the host repo's RUNNERS.md) — SSH with Windows' own OpenSSH client; uses no
-#          GitHub Actions minutes. With no runner online the job waits (up to
-#          24 h) for one.
-#   github GitHub-hosted ubuntu-latest via appleboy/ssh-action (a Docker action,
-#          Linux only) — for when the machine is off (costs Actions minutes on
-#          a private repo).
+# Where it runs: the diffenderfer-games org's self-hosted Windows runner
+# (DESKTOP-M6EK2BJ; one org-level runner serves every private repo in the org,
+# see the host repo's RUNNERS.md). GitHub-hosted runners are not used. With no
+# runner online the job waits (up to 24 h) for one.
 #
-# Repo secrets (each repo's own; Settings → Secrets and variables → Actions,
+# Safeguards (the runner runs whatever a workflow says, on the owner's machine):
+#   - triggers: push to the default branch and manual runs only; never add
+#     pull_request / pull_request_target or any trigger a fork can fire;
+#   - the job's if: refuses anything but a push / manual run on the default
+#     branch of a diffenderfer-games repo;
+#   - it never runs in the public template (diffenderfer-games/dg-template);
+#     games copied from it are private repos, where the same file deploys.
+#
+# Repo secrets (each repo's own; Settings > Secrets and variables > Actions,
 # e.g. gh secret set DEPLOY_SSH_KEY -R diffenderfer-games/<game> < keyfile):
 #   DEPLOY_SSH_KEY      private deploy key                 (required to enable)
 #   DEPLOY_HOST         host or droplet IP  (optional, default: diffenderfer.games)
 #   DEPLOY_USER         ssh user            (optional, default: root)
 #   DEPLOY_PATH         dir on the server, under /root (optional, default: this repo's name)
-#   DEPLOY_KNOWN_HOSTS  the host's known_hosts line(s)   (optional, self-hosted
-#                       deploy: else the host key is accepted on first use and
-#                       remembered for that run only)
+#   DEPLOY_KNOWN_HOSTS  the host's known_hosts line(s)   (optional: else the host
+#                       key is accepted on first use and remembered for that run only)
 # Repo variable (optional): DEPLOY_SLUG, the catalog slug (default: the repo
-# name, lowercased) — the name of the link in the host's apps/ folder.
+# name, lowercased), the name of the link in the host's apps/ folder.
 #
 # First deploy: when the server has no clone yet, the remote script clones the
 # repo (the droplet's gh login authenticates private org repos), installs it,
@@ -37,78 +38,27 @@ on:
   push:
     branches: [main, master]
   workflow_dispatch:
-    inputs:
-      ci_on:
-        description: "Where the deploy runs (variable: the CI_ON repo variable, else self)"
-        type: choice
-        options: [variable, self, github]
-        default: variable
+
+permissions:
+  contents: read
 
 concurrency:
   group: deploy-${{ github.repository }}
   cancel-in-progress: false
 
 jobs:
-  # CI_ON=github: GitHub-hosted, appleboy/ssh-action
-  deploy:
-    if: ((inputs.ci_on != 'variable' && inputs.ci_on) || vars.CI_ON || 'self') == 'github'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check for deploy secrets
-        id: gate
-        env:
-          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-        run: |
-          if [ -n "$KEY" ]; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::DEPLOY_SSH_KEY not set — skipping deploy."
-          fi
-
-      - name: SSH and update
-        if: steps.gate.outputs.ready == 'true'
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.DEPLOY_HOST || 'diffenderfer.games' }}
-          username: ${{ secrets.DEPLOY_USER || 'root' }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          script_stop: true
-          script: |
-            set -euo pipefail
-            REPO="${{ github.repository }}"
-            DIR="/root/${{ secrets.DEPLOY_PATH || github.event.repository.name }}"
-            SLUG="${{ vars.DEPLOY_SLUG || github.event.repository.name }}"
-            APPS=/root/diffenderfer-games/apps
-            if [ ! -d "$DIR/.git" ]; then
-              echo "first deploy: cloning $REPO into $DIR"
-              git clone "https://github.com/$REPO.git" "$DIR"
-            fi
-            cd "$DIR"
-            git fetch --all --prune
-            git reset --hard "origin/$(git symbolic-ref --short HEAD)"
-            npm install --no-audit --no-fund
-            rm -f .diffenderfer-build-cache
-            SLUG="$(printf '%s' "$SLUG" | tr '[:upper:]' '[:lower:]')"
-            if ! printf '%s' "$SLUG" | grep -Eq '^[a-z0-9][a-z0-9-]*$'; then echo "bad slug: $SLUG" >&2; exit 1; fi
-            if [ -L "$APPS/$SLUG" ] || [ -e "$APPS/$SLUG" ]; then
-              [ "$(readlink -f "$APPS/$SLUG")" = "$(readlink -f "$DIR")" ] || echo "::warning::$APPS/$SLUG exists but isn't this repo; left as is"
-            else
-              ln -s "$DIR" "$APPS/$SLUG"
-              echo "linked $APPS/$SLUG -> $DIR"
-            fi
-            # Rebuild and restart only this game on dg-host (loopback only; blocks until built, up to 10 min).
-            # Prints the JSON report; a non-2xx answer (500 = broken, 503 = host still booting) fails the deploy.
-            # Fallback if ever needed: systemctl restart diffenderfer-games (the compat shim: restarts dg-host + dg-hub, ~15 s for every game).
-            curl --fail-with-body -sS -X POST --max-time 600 "http://127.0.0.1:8080/_host/rebuild/$SLUG"; echo
-            echo "deployed $(git rev-parse --short HEAD)"
-
-  # CI_ON=self (default): on the owner's Windows runner — the same gate and
-  # remote script; Windows' OpenSSH client. (Its PowerShell steps are Windows
-  # PowerShell 5.1: ASCII only.)
+  # On the owner's self-hosted Windows runner (DESKTOP-M6EK2BJ), Windows' OpenSSH
+  # client. (Its PowerShell steps are Windows PowerShell 5.1: ASCII only.)
   deploy-self:
     name: deploy (self-hosted)
-    if: ((inputs.ci_on != 'variable' && inputs.ci_on) || vars.CI_ON || 'self') == 'self'
+    # Push-only guard: only a push / manual run on the default branch of a repo in
+    # the diffenderfer-games org; never the public template itself (it must not
+    # run on any runner).
+    if: >-
+      github.repository != 'diffenderfer-games/dg-template' &&
+      github.repository_owner == 'diffenderfer-games' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: [self-hosted, Windows]
     timeout-minutes: 30
     steps:
@@ -152,7 +102,7 @@ jobs:
           } else {
             [IO.File]::WriteAllText($kh, ''); $strict = 'accept-new'
           }
-          # the remote script (the same as the GitHub-hosted deploy's), sent base64-encoded: no quoting / CRLF trouble
+          # the remote script, sent base64-encoded: no quoting / CRLF trouble
           $script = @'
           set -euo pipefail
           REPO="__REPO__"
