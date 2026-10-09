@@ -1,5 +1,5 @@
 # Auto-deploy on push — SSHes into the diffenderfer.games host, pulls, installs,
-# and restarts the catalog (which rebuilds this game). It only runs when the
+# and asks the host to rebuild only this game. It only runs when the
 # deploy key is configured, so a freshly-cloned game (no secrets) just
 # skips deploy instead of failing.
 #
@@ -29,7 +29,7 @@
 # First deploy: when the server has no clone yet, the remote script clones the
 # repo (the droplet's gh login authenticates private org repos), installs it,
 # and links it into /root/diffenderfer-games/apps/<slug>, so a new game goes
-# live on its first push. Later deploys pull, install and restart as before.
+# live on its first push. Later deploys pull, install and rebuild as before.
 # See the host repo's ACTIONS.md for full setup.
 name: Deploy
 
@@ -97,7 +97,10 @@ jobs:
               ln -s "$DIR" "$APPS/$SLUG"
               echo "linked $APPS/$SLUG -> $DIR"
             fi
-            systemctl restart diffenderfer-games
+            # Rebuild and restart only this game on dg-host (loopback only; blocks until built, up to 10 min).
+            # Prints the JSON report; a non-2xx answer (500 = broken, 503 = host still booting) fails the deploy.
+            # Fallback if ever needed: systemctl restart diffenderfer-games (the compat shim: restarts dg-host + dg-hub, ~15 s for every game).
+            curl --fail-with-body -sS -X POST --max-time 600 "http://127.0.0.1:8080/_host/rebuild/$SLUG"; echo
             echo "deployed $(git rev-parse --short HEAD)"
 
   # CI_ON=self (default): on the owner's Windows runner — the same gate and
@@ -173,7 +176,10 @@ jobs:
             ln -s "$DIR" "$APPS/$SLUG"
             echo "linked $APPS/$SLUG -> $DIR"
           fi
-          systemctl restart diffenderfer-games
+          # Rebuild and restart only this game on dg-host (loopback only; blocks until built, up to 10 min).
+          # Prints the JSON report; a non-2xx answer (500 = broken, 503 = host still booting) fails the deploy.
+          # Fallback if ever needed: systemctl restart diffenderfer-games (the compat shim: restarts dg-host + dg-hub, ~15 s for every game).
+          curl --fail-with-body -sS -X POST --max-time 600 "http://127.0.0.1:8080/_host/rebuild/$SLUG"; echo
           echo "deployed $(git rev-parse --short HEAD)"
           '@
           $script = ($script -replace "`r", '').Replace('__DEPLOY_DIR__', $env:DEPLOY_DIR).Replace('__REPO__', $env:DEPLOY_REPO).Replace('__SLUG__', $env:DEPLOY_SLUG) + "`n"
