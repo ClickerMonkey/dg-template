@@ -28,9 +28,8 @@ To start a new game:
    secrets would need a paid plan for private repos.
 3. **The org's self-hosted Windows runner deploys it automatically**: one runner on
    the owner's machine serves every private repo in the org, so there is nothing to
-   register. The variable `CI_ON` switches where the deploy runs: `self` (default,
-   also when unset; no Actions minutes) or `github` (GitHub-hosted, costs minutes —
-   for when the machine is off).
+   register. The deploy runs only there (GitHub-hosted runners aren't used), and only
+   for a push to the default branch or a manual run.
 4. **Push to `main`/`master`: the first deploy puts it on the host.** When the
    droplet has no clone yet, the deploy clones the repo into `/root/<repo>`
    (the droplet's `gh` login reads private org repos), runs `npm install`,
@@ -45,9 +44,8 @@ To start a new game:
 
 **This template repo itself is public** (so it can be used as a template and read
 freely). Public repos never get the org's self-hosted runner, and it has no deploy secrets: its
-repo variable `CI_ON=github` keeps its own workflow on GitHub-hosted runners (free
-for public repos), where the deploy just skips. A game made from it is private and
-uses the org runner.
+deploy job is guarded off (`if: github.repository != 'diffenderfer-games/dg-template'`),
+so it runs on no runner at all. A game made from it is private and uses the org runner.
 
 ## Quick start
 
@@ -121,5 +119,5 @@ once the repo secret `DEPLOY_SSH_KEY` is set ("Where games live", step 2). By de
 on the org's self-hosted Windows runner (no Actions minutes; nothing to register
 per repo — see the host's
 [RUNNERS.md](https://github.com/diffenderfer-games/diffenderfer-games/blob/master/RUNNERS.md)).
-The variable `CI_ON=github` switches to the GitHub-hosted deploy instead (this
-template repo, being public, uses that).
+It runs only for a push to the default branch or a manual run (never for pull
+requests); in this template repo itself it never runs.

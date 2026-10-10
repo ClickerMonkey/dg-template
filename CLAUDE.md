@@ -198,4 +198,4 @@ Games are private repos in the GitHub organization **diffenderfer-games**
 deploy secrets (`DEPLOY_SSH_KEY`, `DEPLOY_HOST`, added when the repo is created)
 and the org's self-hosted runner run the deploy, so don't add runners or
 workflow changes for that. The template repo
-itself is public and runs on GitHub-hosted runners (`CI_ON=github`).
+itself is public; its deploy job is guarded off there and never runs on any runner.
